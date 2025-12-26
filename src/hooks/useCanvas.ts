@@ -81,6 +81,9 @@ export const useCanvas = () => {
         // Clear and set transform
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+        // Scaled Font Metrics
+        const fontScale = viewState.zoom / 50;
+
         // Draw Rooms (Area & Names)
         rooms.forEach(room => {
             const screenCentroid = worldToScreen(room.centroid);
@@ -97,7 +100,6 @@ export const useCanvas = () => {
             ctx.textBaseline = 'middle';
 
             // Scaled Font Sizes
-            const fontScale = viewState.zoom / 50;
             const nameSize = Math.max(8, 16 * fontScale);
             const areaSize = Math.max(7, 14 * fontScale);
 
@@ -238,7 +240,8 @@ export const useCanvas = () => {
 
             // Draw Dimensions
             const dist = distance(wall.start, wall.end);
-            drawDimension(wall.start, wall.end, `${dist.toFixed(2)}m`, 30);
+            const dimOffset = 30 * fontScale;
+            drawDimension(wall.start, wall.end, `${dist.toFixed(2)}m`, dimOffset);
 
             // Draw Objects
             const wallVec = { x: wall.end.x - wall.start.x, y: wall.end.y - wall.start.y };
@@ -340,17 +343,22 @@ export const useCanvas = () => {
         const totalArea = rooms.reduce((sum, room) => sum + room.area, 0);
         if (totalArea > 0) {
             ctx.save();
+            const hudScale = Math.max(0.6, fontScale); // Don't let HUD get too tiny
+            const hudWidth = 140 * hudScale;
+            const hudHeight = 40 * hudScale;
+            const hudFontSize = 16 * hudScale;
+
             ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'; // Semi-transparent background
-            ctx.fillRect(canvas.width - 160, 20, 140, 40);
+            ctx.fillRect(canvas.width - hudWidth - 20, 20, hudWidth, hudHeight);
             ctx.strokeStyle = '#e4e4e7'; // zinc-200
             ctx.lineWidth = 1;
-            ctx.strokeRect(canvas.width - 160, 20, 140, 40);
+            ctx.strokeRect(canvas.width - hudWidth - 20, 20, hudWidth, hudHeight);
 
             ctx.fillStyle = '#000000';
-            ctx.font = 'bold 16px sans-serif';
+            ctx.font = `bold ${hudFontSize}px sans-serif`;
             ctx.textAlign = 'right';
             ctx.textBaseline = 'middle';
-            ctx.fillText(`Total: ${totalArea.toFixed(2)}m²`, canvas.width - 35, 40);
+            ctx.fillText(`Total: ${totalArea.toFixed(2)}m²`, canvas.width - 35, 20 + (hudHeight / 2));
             ctx.restore();
         }
 
