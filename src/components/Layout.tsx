@@ -23,7 +23,10 @@ export const Layout: React.FC = () => {
         handleWheel,
         handleDrop,
         handleDragOver,
-        deleteSelection
+        deleteSelection,
+        zoomIn,
+        zoomOut,
+        fitToView
     } = useCanvas();
 
     const [isAIModalOpen, setIsAIModalOpen] = React.useState(false);
@@ -118,7 +121,11 @@ export const Layout: React.FC = () => {
                         onDrop={handleDrop}
                         onDragOver={handleDragOver}
                     />
-                    <NavigationWidget />
+                    <NavigationWidget
+                        onZoomIn={zoomIn}
+                        onZoomOut={zoomOut}
+                        onReset={fitToView}
+                    />
                     {/* <DebugGeminiTest /> - Hidden for now, integrated into flow */}
 
                     {/* Reference Image Panel */}

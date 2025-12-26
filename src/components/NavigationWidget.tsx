@@ -1,7 +1,13 @@
 import React from 'react';
 import { Move, Minus, Plus, Maximize } from 'lucide-react';
 
-export const NavigationWidget: React.FC = () => {
+interface NavigationWidgetProps {
+    onZoomIn: () => void;
+    onZoomOut: () => void;
+    onReset: () => void;
+}
+
+export const NavigationWidget: React.FC<NavigationWidgetProps> = ({ onZoomIn, onZoomOut, onReset }) => {
     return (
         <div className="absolute top-6 left-6 flex flex-col gap-2">
             <div className="bg-white text-black rounded-lg shadow-xl overflow-hidden w-48 border border-zinc-200">
@@ -16,13 +22,22 @@ export const NavigationWidget: React.FC = () => {
                         <div className="absolute top-1/2 left-1/2 w-2 h-2 bg-black rounded-full transform -translate-x-1/2 -translate-y-1/2"></div>
                     </div>
                     <div className="flex flex-col gap-1 justify-center">
-                        <button className="bg-zinc-100 hover:bg-zinc-200 text-black p-1.5 rounded flex items-center justify-center transition-colors border border-zinc-200">
+                        <button
+                            onClick={onZoomIn}
+                            className="bg-zinc-100 hover:bg-zinc-200 text-black p-1.5 rounded flex items-center justify-center transition-colors border border-zinc-200"
+                        >
                             <Plus size={14} />
                         </button>
-                        <button className="bg-zinc-100 hover:bg-zinc-200 text-black p-1.5 rounded flex items-center justify-center transition-colors border border-zinc-200">
+                        <button
+                            onClick={onZoomOut}
+                            className="bg-zinc-100 hover:bg-zinc-200 text-black p-1.5 rounded flex items-center justify-center transition-colors border border-zinc-200"
+                        >
                             <Minus size={14} />
                         </button>
-                        <button className="bg-zinc-100 hover:bg-zinc-200 text-black p-1.5 rounded flex items-center justify-center transition-colors border border-zinc-200">
+                        <button
+                            onClick={onReset}
+                            className="bg-zinc-100 hover:bg-zinc-200 text-black p-1.5 rounded flex items-center justify-center transition-colors border border-zinc-200"
+                        >
                             <Maximize size={14} />
                         </button>
                     </div>

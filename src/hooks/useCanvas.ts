@@ -154,21 +154,23 @@ export const useCanvas = () => {
             ctx.beginPath();
             ctx.strokeStyle = '#999999'; // Gray measurement lines
             ctx.lineWidth = 1;
+            ctx.lineWidth = 1 * (viewState.zoom / 50); // Scale line width
 
             // Main line
             ctx.moveTo(d1.x, d1.y);
             ctx.lineTo(d2.x, d2.y);
 
             // Extension lines
+            const extSize = 5 * (viewState.zoom / 50);
             ctx.moveTo(s1.x, s1.y);
-            ctx.lineTo(d1.x + nx * 5, d1.y + ny * 5);
+            ctx.lineTo(d1.x + nx * extSize, d1.y + ny * extSize);
             ctx.moveTo(s2.x, s2.y);
-            ctx.lineTo(d2.x + nx * 5, d2.y + ny * 5);
+            ctx.lineTo(d2.x + nx * extSize, d2.y + ny * extSize);
 
             ctx.stroke();
 
             // Arrows
-            const arrowSize = 4;
+            const arrowSize = 4 * (viewState.zoom / 50);
             const angle = Math.atan2(d2.y - d1.y, d2.x - d1.x);
 
             ctx.beginPath();
@@ -325,12 +327,13 @@ export const useCanvas = () => {
         state.walls.forEach(wall => {
             const drawVertex = (p: Point) => {
                 const sp = worldToScreen(p);
+                const radius = Math.max(2, 4 * fontScale);
                 ctx.beginPath();
-                ctx.arc(sp.x, sp.y, 4, 0, Math.PI * 2);
+                ctx.arc(sp.x, sp.y, radius, 0, Math.PI * 2);
                 ctx.fillStyle = '#3b82f6';
                 ctx.fill();
                 ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = 1;
+                ctx.lineWidth = Math.max(0.5, 1 * fontScale);
                 ctx.stroke();
             };
             if (state.selectedId === wall.id) {
@@ -788,20 +791,23 @@ export const useCanvas = () => {
     return {
         canvasRef,
         state,
-        setHistory, // Expose for Layout
-        setViewState, // Expose for Layout
+        setHistory,
+        setViewState,
         snapshot,
         undo,
         redo,
         canUndo,
         canRedo,
-        deleteSelection, // Exported
+        deleteSelection,
         handleMouseDown,
         handleMouseMove,
         handleMouseUp,
         handleWheel,
         handleDragOver,
         handleDrop,
-        worldToScreen
+        worldToScreen,
+        zoomIn: () => setViewState(prev => ({ ...prev, zoom: Math.min(200, prev.zoom * 1.2) })),
+        zoomOut: () => setViewState(prev => ({ ...prev, zoom: Math.max(10, prev.zoom / 1.2) })),
+        fitToView: () => setViewState(prev => ({ ...prev, zoom: 50, pan: { x: 0, y: 0 } }))
     };
 };
