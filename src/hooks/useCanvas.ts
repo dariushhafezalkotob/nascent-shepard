@@ -221,24 +221,36 @@ export const useCanvas = () => {
             const nx = -dy / len;
             const ny = dx / len;
 
-            // Wall Body
-            ctx.beginPath();
-            const p1 = { x: start.x + nx * thickness / 2, y: start.y + ny * thickness / 2 };
-            const p2 = { x: end.x + nx * thickness / 2, y: end.y + ny * thickness / 2 };
-            const p3 = { x: end.x - nx * thickness / 2, y: end.y - ny * thickness / 2 };
-            const p4 = { x: start.x - nx * thickness / 2, y: start.y - ny * thickness / 2 };
+            if (wall.isVirtual) {
+                // Virtual Wall (Dashed Line)
+                ctx.beginPath();
+                ctx.moveTo(start.x, start.y);
+                ctx.lineTo(end.x, end.y);
+                ctx.strokeStyle = isSelected ? '#60a5fa' : '#999999';
+                ctx.lineWidth = isSelected ? 2 : 1;
+                ctx.setLineDash([5, 5]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            } else {
+                // Wall Body
+                ctx.beginPath();
+                const p1 = { x: start.x + nx * thickness / 2, y: start.y + ny * thickness / 2 };
+                const p2 = { x: end.x + nx * thickness / 2, y: end.y + ny * thickness / 2 };
+                const p3 = { x: end.x - nx * thickness / 2, y: end.y - ny * thickness / 2 };
+                const p4 = { x: start.x - nx * thickness / 2, y: start.y - ny * thickness / 2 };
 
-            ctx.moveTo(p1.x, p1.y);
-            ctx.lineTo(p2.x, p2.y);
-            ctx.lineTo(p3.x, p3.y);
-            ctx.lineTo(p4.x, p4.y);
-            ctx.closePath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.lineTo(p3.x, p3.y);
+                ctx.lineTo(p4.x, p4.y);
+                ctx.closePath();
 
-            ctx.fillStyle = isSelected ? '#1e40af' : '#000000';
-            ctx.fill();
-            ctx.strokeStyle = isSelected ? '#60a5fa' : '#000000';
-            ctx.lineWidth = isSelected ? 2 : 1;
-            ctx.stroke();
+                ctx.fillStyle = isSelected ? '#1e40af' : '#000000';
+                ctx.fill();
+                ctx.strokeStyle = isSelected ? '#60a5fa' : '#000000';
+                ctx.lineWidth = isSelected ? 2 : 1;
+                ctx.stroke();
+            }
 
             // Draw Dimensions
             const dist = distance(wall.start, wall.end);

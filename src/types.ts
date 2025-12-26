@@ -9,6 +9,7 @@ export interface Wall {
     end: Point;
     thickness: number;
     height: number; // Wall height in mm
+    isVirtual?: boolean; // If true, this is a boundary line but not a physical wall
 }
 
 export interface WallObject {

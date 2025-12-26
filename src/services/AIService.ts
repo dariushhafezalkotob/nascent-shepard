@@ -31,7 +31,11 @@ RETURN JSON ONLY:
 {
   "footprint": [{"x": 0, "y": 0}, ...],
   "rooms": [
-    {"name": "Room Name", "x": 100, "y": 100, "width": 200, "height": 200}
+    {
+      "name": "Room Name", 
+      "x": 100, "y": 100, "width": 200, "height": 200,
+      "open_edges": ["top", "bottom", "left", "right"] // List edges that have NO physical wall (open-plan)
+    }
   ],
   "overall_width_meters": ${constraints ? Math.max(constraints.landWidth, constraints.landDepth) : 15.0}
 }
@@ -43,6 +47,7 @@ interface VisionRoom {
     y: number;
     width: number;
     height: number;
+    open_edges?: string[]; // "top" | "bottom" | "left" | "right"
 }
 
 interface VisionResponse {
@@ -419,12 +424,17 @@ export class AIService {
 
                 if (!isExterior) {
                     // Create Internal Wall
+                    const isVirtual = room.open_edges?.includes(
+                        ['top', 'right', 'bottom', 'left'][segments.indexOf(seg)]
+                    ) || false;
+
                     walls.push({
                         id: uuidv4(),
                         start: seg.start,
                         end: seg.end,
-                        thickness: INTERNAL_THICKNESS,
-                        height: WALL_HEIGHT
+                        thickness: isVirtual ? 0.05 : INTERNAL_THICKNESS,
+                        height: WALL_HEIGHT,
+                        isVirtual
                     });
                 }
             });
