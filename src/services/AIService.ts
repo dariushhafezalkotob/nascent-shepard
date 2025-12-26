@@ -2,7 +2,7 @@
 import type { Wall, RoomLabel } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { getSegmentIntersection, pointToSegmentDistance, projectPointOnSegment, distance } from '../utils/geometry';
+import { getSegmentIntersection, projectPointOnSegment, distance } from '../utils/geometry';
 
 // --- PROMPTS ---
 
@@ -448,99 +448,87 @@ export class AIService {
             });
         });
 
-        // --- DEDUPLICATION & PLANARIZATION PASS ---
-        const EPS = 0.05;
-        const cutsByWall = new Map<number, number[]>(); // index -> t values
+        // --- ROBUST DEDUPLICATION & PLANARIZATION PASS (Vertex-First) ---
+        const SNAP_DIST = 0.15; // 15cm snapping radius
 
-        // 1. Find all cuts (Intersections and T-junctions)
+        // 1. Collect all "Vertex Seeds" (Endpoints + Intersections)
+        const seeds: { x: number; y: number }[] = [];
+        candidates.forEach(w => {
+            seeds.push(w.start);
+            seeds.push(w.end);
+        });
+
         for (let i = 0; i < candidates.length; i++) {
             const w1 = candidates[i];
             for (let j = i + 1; j < candidates.length; j++) {
                 const w2 = candidates[j];
-
-                // Case A: Segments intersect at a point (X-junction)
                 const intersect = getSegmentIntersection(w1.start, w1.end, w2.start, w2.end);
-                if (intersect) {
-                    const t1 = projectPointOnSegment(intersect, w1.start, w1.end).t;
-                    const t2 = projectPointOnSegment(intersect, w2.start, w2.end).t;
-                    if (t1 > 0.01 && t1 < 0.99) {
-                        if (!cutsByWall.has(i)) cutsByWall.set(i, []);
-                        cutsByWall.get(i)!.push(t1);
-                    }
-                    if (t2 > 0.01 && t2 < 0.99) {
-                        if (!cutsByWall.has(j)) cutsByWall.set(j, []);
-                        cutsByWall.get(j)!.push(t2);
-                    }
-                }
+                if (intersect) seeds.push(intersect);
 
-                // Case B: T-junctions (one endpoint lies on another segment)
-                const checkT = (p: { x: number, y: number }, wallIdx: number, wall: Wall) => {
-                    const dist = pointToSegmentDistance(p, wall.start, wall.end);
-                    if (dist < EPS) {
-                        const { t } = projectPointOnSegment(p, wall.start, wall.end);
-                        if (t > 0.01 && t < 0.99) {
-                            if (!cutsByWall.has(wallIdx)) cutsByWall.set(wallIdx, []);
-                            cutsByWall.get(wallIdx)!.push(t);
-                        }
-                    }
-                };
-
-                checkT(w2.start, i, w1);
-                checkT(w2.end, i, w1);
-                checkT(w1.start, j, w2);
-                checkT(w1.end, j, w2);
+                // Also add project of endpoints to other segments (T-junctions)
+                const p1 = projectPointOnSegment(w1.start, w2.start, w2.end);
+                if (p1.t > 0 && p1.t < 1 && distance(w1.start, p1.point) < SNAP_DIST) seeds.push(p1.point);
+                const p2 = projectPointOnSegment(w1.end, w2.start, w2.end);
+                if (p2.t > 0 && p2.t < 1 && distance(w1.end, p2.point) < SNAP_DIST) seeds.push(p2.point);
+                const p3 = projectPointOnSegment(w2.start, w1.start, w1.end);
+                if (p3.t > 0 && p3.t < 1 && distance(w2.start, p3.point) < SNAP_DIST) seeds.push(p3.point);
+                const p4 = projectPointOnSegment(w2.end, w1.start, w1.end);
+                if (p4.t > 0 && p4.t < 1 && distance(w2.end, p4.point) < SNAP_DIST) seeds.push(p4.point);
             }
         }
 
-        // 2. Perform splits
+        // 2. Consolidate into Master Vertices (Clustering)
+        const masterVertices: { x: number; y: number }[] = [];
+        for (const seed of seeds) {
+            let found = false;
+            for (const mv of masterVertices) {
+                if (distance(seed, mv) < SNAP_DIST) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) masterVertices.push(seed);
+        }
+
+        // 3. Reconstruct Walls
         const pieces: Wall[] = [];
-        for (let i = 0; i < candidates.length; i++) {
-            const wall = candidates[i];
-            const cuts = cutsByWall.get(i);
-            if (!cuts || cuts.length === 0) {
-                pieces.push(wall);
-            } else {
-                cuts.sort((a, b) => a - b);
-                let prevT = 0;
-                const uniqueCuts = Array.from(new Set(cuts.map(t => Math.round(t * 1000) / 1000)));
+        for (const base of candidates) {
+            const wallPoints: { p: { x: number, y: number }, t: number }[] = [];
+            for (const mv of masterVertices) {
+                const proj = projectPointOnSegment(mv, base.start, base.end);
+                if (distance(mv, proj.point) < 0.05) {
+                    wallPoints.push({ p: mv, t: proj.t });
+                }
+            }
 
-                for (const t of uniqueCuts) {
-                    if (t - prevT < 0.01) continue;
-                    pieces.push({
-                        ...wall,
-                        id: uuidv4(),
-                        start: { x: wall.start.x + (wall.end.x - wall.start.x) * prevT, y: wall.start.y + (wall.end.y - wall.start.y) * prevT },
-                        end: { x: wall.start.x + (wall.end.x - wall.start.x) * t, y: wall.start.y + (wall.end.y - wall.start.y) * t }
-                    });
-                    prevT = t;
-                }
-                if (1.0 - prevT > 0.01) {
-                    pieces.push({
-                        ...wall,
-                        id: uuidv4(),
-                        start: { x: wall.start.x + (wall.end.x - wall.start.x) * prevT, y: wall.start.y + (wall.end.y - wall.start.y) * prevT },
-                        end: wall.end
-                    });
-                }
+            wallPoints.sort((a, b) => a.t - b.t);
+
+            for (let i = 0; i < wallPoints.length - 1; i++) {
+                const p1 = wallPoints[i];
+                const p2 = wallPoints[i + 1];
+                if (p2.t - p1.t < 0.001) continue;
+                pieces.push({
+                    ...base,
+                    id: uuidv4(),
+                    start: p1.p,
+                    end: p2.p
+                });
             }
         }
 
-        // 3. Deduplicate identical segments
+        // 4. Final Deduplication
         const finalWalls: Wall[] = [];
         for (const p of pieces) {
             let duplicate = false;
             for (let k = 0; k < finalWalls.length; k++) {
                 const f = finalWalls[k];
-                const dStart = distance(p.start, f.start);
-                const dEnd = distance(p.end, f.end);
-                const dStartEnd = distance(p.start, f.end);
-                const dEndStart = distance(p.end, f.start);
+                const s1 = distance(p.start, f.start) < 0.01;
+                const e1 = distance(p.end, f.end) < 0.01;
+                const s2 = distance(p.start, f.end) < 0.01;
+                const e2 = distance(p.end, f.start) < 0.01;
 
-                if ((dStart < EPS && dEnd < EPS) || (dStartEnd < EPS && dEndStart < EPS)) {
-                    // It's a duplicate. Rule: Physical wins over virtual.
-                    if (!p.isVirtual && f.isVirtual) {
-                        finalWalls[k] = p; // Replace virtual with physical
-                    }
+                if ((s1 && e1) || (s2 && e2)) {
+                    if (!p.isVirtual && f.isVirtual) finalWalls[k] = p;
                     duplicate = true;
                     break;
                 }
