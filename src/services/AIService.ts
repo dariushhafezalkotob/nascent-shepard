@@ -2,6 +2,7 @@
 import type { Wall, RoomLabel } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { areCollinear, segmentsOverlap, mergeSegments } from '../utils/geometry';
 
 // --- PROMPTS ---
 
@@ -264,8 +265,8 @@ export class AIService {
     }
 
     private static convertVisionToWalls(data: VisionResponse, targetArea: number | null, constraints?: { landWidth: number, landDepth: number }): { walls: Wall[], labels: RoomLabel[], debugDims?: { width: number, depth: number } } {
-        const walls: Wall[] = [];
         const labels: RoomLabel[] = [];
+        const candidates: Wall[] = [];
 
         // 1. SCALING LOGIC
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -344,9 +345,8 @@ export class AIService {
                 const start = { x: tX(p1.x), y: tY(p1.y) };
                 const end = { x: tX(p2.x), y: tY(p2.y) };
 
-                const wallId = uuidv4();
-                walls.push({
-                    id: wallId,
+                candidates.push({
+                    id: uuidv4(),
                     start,
                     end,
                     thickness: EXTERNAL_THICKNESS,
@@ -428,7 +428,7 @@ export class AIService {
                         ['top', 'right', 'bottom', 'left'][segments.indexOf(seg)]
                     ) || false;
 
-                    walls.push({
+                    candidates.push({
                         id: uuidv4(),
                         start: seg.start,
                         end: seg.end,
@@ -448,11 +448,42 @@ export class AIService {
             });
         });
 
+        // --- DEDUPLICATION & MERGING PASS ---
+        const finalWalls: Wall[] = [];
+
+        for (const cand of candidates) {
+            let merged = false;
+            for (let i = 0; i < finalWalls.length; i++) {
+                const existing = finalWalls[i];
+
+                if (areCollinear(cand.start, cand.end, existing.start, existing.end)) {
+                    if (segmentsOverlap(cand.start, cand.end, existing.start, existing.end)) {
+                        // Merge them
+                        const newSeg = mergeSegments(cand.start, cand.end, existing.start, existing.end);
+                        existing.start = newSeg.start;
+                        existing.end = newSeg.end;
+
+                        // Rule: Real wall wins over virtual wall
+                        if (!cand.isVirtual) {
+                            existing.isVirtual = false;
+                            existing.thickness = Math.max(existing.thickness, cand.thickness);
+                        }
+
+                        merged = true;
+                        break;
+                    }
+                }
+            }
+            if (!merged) {
+                finalWalls.push(cand);
+            }
+        }
+
         const debugDims = {
             width: tX(maxX) - tX(minX),
             depth: tY(maxY) - tY(minY)
         };
 
-        return { walls, labels, debugDims };
+        return { walls: finalWalls, labels, debugDims };
     }
 }
