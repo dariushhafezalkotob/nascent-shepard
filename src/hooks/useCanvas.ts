@@ -96,15 +96,20 @@ export const useCanvas = () => {
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
 
+            // Scaled Font Sizes
+            const fontScale = viewState.zoom / 50;
+            const nameSize = Math.max(8, 16 * fontScale);
+            const areaSize = Math.max(7, 14 * fontScale);
+
             // Name
             ctx.fillStyle = '#000000';
-            ctx.font = 'bold 16px sans-serif';
-            ctx.fillText(roomName, screenCentroid.x, screenCentroid.y - 10);
+            ctx.font = `bold ${nameSize}px sans-serif`;
+            ctx.fillText(roomName, screenCentroid.x, screenCentroid.y - (10 * fontScale));
 
             // Area
             ctx.fillStyle = '#666666';
-            ctx.font = 'bold 14px sans-serif';
-            ctx.fillText(`${room.area.toFixed(2)}m²`, screenCentroid.x, screenCentroid.y + 10);
+            ctx.font = `bold ${areaSize}px sans-serif`;
+            ctx.fillText(`${room.area.toFixed(2)}m²`, screenCentroid.x, screenCentroid.y + (10 * fontScale));
 
             // Optional: visual fill for room
             ctx.beginPath();
@@ -188,8 +193,9 @@ export const useCanvas = () => {
                 textAngle += Math.PI;
             }
             ctx.rotate(textAngle);
+            const dimFontSize = Math.max(6, 12 * (viewState.zoom / 50));
             ctx.fillStyle = '#999999'; // Gray measurement text
-            ctx.font = '12px sans-serif';
+            ctx.font = `${dimFontSize}px sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
             ctx.fillText(text, 0, -2);
