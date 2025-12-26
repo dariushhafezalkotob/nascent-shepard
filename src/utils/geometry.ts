@@ -100,3 +100,25 @@ export const mergeSegments = (a: Point, b: Point, c: Point, d: Point): { start: 
     }
     return bestPair;
 };
+
+export const getSegmentIntersection = (p1: Point, p2: Point, p3: Point, p4: Point): Point | null => {
+    const x1 = p1.x, y1 = p1.y;
+    const x2 = p2.x, y2 = p2.y;
+    const x3 = p3.x, y3 = p3.y;
+    const x4 = p4.x, y4 = p4.y;
+
+    // Actually using a more robust version:
+    const det = (x2 - x1) * (y4 - y3) - (y2 - y1) * (x4 - x3);
+    if (Math.abs(det) < 0.0001) return null; // Parallel
+
+    const t = ((x3 - x1) * (y4 - y3) - (y3 - y1) * (x4 - x3)) / det;
+    const u = ((x3 - x1) * (y2 - y1) - (y3 - y1) * (x2 - x1)) / det;
+
+    if (t > 0.001 && t < 0.999 && u > 0.001 && u < 0.999) {
+        return {
+            x: x1 + t * (x2 - x1),
+            y: y1 + t * (y2 - y1)
+        };
+    }
+    return null;
+};

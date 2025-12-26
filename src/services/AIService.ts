@@ -2,7 +2,7 @@
 import type { Wall, RoomLabel } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { areCollinear, segmentsOverlap, mergeSegments } from '../utils/geometry';
+import { getSegmentIntersection, pointToSegmentDistance, projectPointOnSegment, distance } from '../utils/geometry';
 
 // --- PROMPTS ---
 
@@ -448,35 +448,104 @@ export class AIService {
             });
         });
 
-        // --- DEDUPLICATION & MERGING PASS ---
-        const finalWalls: Wall[] = [];
+        // --- DEDUPLICATION & PLANARIZATION PASS ---
+        const EPS = 0.05;
+        const cutsByWall = new Map<number, number[]>(); // index -> t values
 
-        for (const cand of candidates) {
-            let merged = false;
-            for (let i = 0; i < finalWalls.length; i++) {
-                const existing = finalWalls[i];
+        // 1. Find all cuts (Intersections and T-junctions)
+        for (let i = 0; i < candidates.length; i++) {
+            const w1 = candidates[i];
+            for (let j = i + 1; j < candidates.length; j++) {
+                const w2 = candidates[j];
 
-                if (areCollinear(cand.start, cand.end, existing.start, existing.end)) {
-                    if (segmentsOverlap(cand.start, cand.end, existing.start, existing.end)) {
-                        // Merge them
-                        const newSeg = mergeSegments(cand.start, cand.end, existing.start, existing.end);
-                        existing.start = newSeg.start;
-                        existing.end = newSeg.end;
-
-                        // Rule: Real wall wins over virtual wall
-                        if (!cand.isVirtual) {
-                            existing.isVirtual = false;
-                            existing.thickness = Math.max(existing.thickness, cand.thickness);
-                        }
-
-                        merged = true;
-                        break;
+                // Case A: Segments intersect at a point (X-junction)
+                const intersect = getSegmentIntersection(w1.start, w1.end, w2.start, w2.end);
+                if (intersect) {
+                    const t1 = projectPointOnSegment(intersect, w1.start, w1.end).t;
+                    const t2 = projectPointOnSegment(intersect, w2.start, w2.end).t;
+                    if (t1 > 0.01 && t1 < 0.99) {
+                        if (!cutsByWall.has(i)) cutsByWall.set(i, []);
+                        cutsByWall.get(i)!.push(t1);
+                    }
+                    if (t2 > 0.01 && t2 < 0.99) {
+                        if (!cutsByWall.has(j)) cutsByWall.set(j, []);
+                        cutsByWall.get(j)!.push(t2);
                     }
                 }
+
+                // Case B: T-junctions (one endpoint lies on another segment)
+                const checkT = (p: { x: number, y: number }, wallIdx: number, wall: Wall) => {
+                    const dist = pointToSegmentDistance(p, wall.start, wall.end);
+                    if (dist < EPS) {
+                        const { t } = projectPointOnSegment(p, wall.start, wall.end);
+                        if (t > 0.01 && t < 0.99) {
+                            if (!cutsByWall.has(wallIdx)) cutsByWall.set(wallIdx, []);
+                            cutsByWall.get(wallIdx)!.push(t);
+                        }
+                    }
+                };
+
+                checkT(w2.start, i, w1);
+                checkT(w2.end, i, w1);
+                checkT(w1.start, j, w2);
+                checkT(w1.end, j, w2);
             }
-            if (!merged) {
-                finalWalls.push(cand);
+        }
+
+        // 2. Perform splits
+        const pieces: Wall[] = [];
+        for (let i = 0; i < candidates.length; i++) {
+            const wall = candidates[i];
+            const cuts = cutsByWall.get(i);
+            if (!cuts || cuts.length === 0) {
+                pieces.push(wall);
+            } else {
+                cuts.sort((a, b) => a - b);
+                let prevT = 0;
+                const uniqueCuts = Array.from(new Set(cuts.map(t => Math.round(t * 1000) / 1000)));
+
+                for (const t of uniqueCuts) {
+                    if (t - prevT < 0.01) continue;
+                    pieces.push({
+                        ...wall,
+                        id: uuidv4(),
+                        start: { x: wall.start.x + (wall.end.x - wall.start.x) * prevT, y: wall.start.y + (wall.end.y - wall.start.y) * prevT },
+                        end: { x: wall.start.x + (wall.end.x - wall.start.x) * t, y: wall.start.y + (wall.end.y - wall.start.y) * t }
+                    });
+                    prevT = t;
+                }
+                if (1.0 - prevT > 0.01) {
+                    pieces.push({
+                        ...wall,
+                        id: uuidv4(),
+                        start: { x: wall.start.x + (wall.end.x - wall.start.x) * prevT, y: wall.start.y + (wall.end.y - wall.start.y) * prevT },
+                        end: wall.end
+                    });
+                }
             }
+        }
+
+        // 3. Deduplicate identical segments
+        const finalWalls: Wall[] = [];
+        for (const p of pieces) {
+            let duplicate = false;
+            for (let k = 0; k < finalWalls.length; k++) {
+                const f = finalWalls[k];
+                const dStart = distance(p.start, f.start);
+                const dEnd = distance(p.end, f.end);
+                const dStartEnd = distance(p.start, f.end);
+                const dEndStart = distance(p.end, f.start);
+
+                if ((dStart < EPS && dEnd < EPS) || (dStartEnd < EPS && dEndStart < EPS)) {
+                    // It's a duplicate. Rule: Physical wins over virtual.
+                    if (!p.isVirtual && f.isVirtual) {
+                        finalWalls[k] = p; // Replace virtual with physical
+                    }
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (!duplicate) finalWalls.push(p);
         }
 
         const debugDims = {
