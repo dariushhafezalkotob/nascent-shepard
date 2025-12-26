@@ -2,7 +2,7 @@
 import type { Wall, RoomLabel } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { getSegmentIntersection, projectPointOnSegment, distance } from '../utils/geometry';
+import { getSegmentIntersection, projectPointOnSegment, distance, pointToSegmentDistance } from '../utils/geometry';
 
 // --- PROMPTS ---
 
@@ -35,8 +35,12 @@ RETURN JSON ONLY:
     {
       "name": "Room Name", 
       "x": 100, "y": 100, "width": 200, "height": 200,
-      "open_edges": ["top", "bottom", "left", "right"] // List edges that have NO physical wall (open-plan)
+      "open_edges": ["top", "bottom", "left", "right"]
     }
+  ],
+  "openings": [
+    {"type": "door", "x": 150, "y": 100, "width": 80},
+    {"type": "window", "x": 500, "y": 10, "width": 120}
   ],
   "overall_width_meters": ${constraints ? Math.max(constraints.landWidth, constraints.landDepth) : 15.0}
 }
@@ -51,16 +55,24 @@ interface VisionRoom {
     open_edges?: string[]; // "top" | "bottom" | "left" | "right"
 }
 
+interface VisionOpening {
+    type: 'door' | 'window';
+    x: number;
+    y: number;
+    width: number;
+}
+
 interface VisionResponse {
     footprint: { x: number; y: number }[];
     rooms: VisionRoom[];
-    overall_width_meters?: number; // meters (This will be treated as the LONGEST leg)
-    overall_width?: number; // fallback
+    openings?: VisionOpening[];
+    overall_width_meters?: number;
+    overall_width?: number;
 }
 
 export class AIService {
 
-    static async generateLayout(data: any, apiKey: string): Promise<{ walls: Wall[], labels: RoomLabel[], generatedImage?: string, rawResponse?: string, dimensions?: { width: number, depth: number } }> {
+    static async generateLayout(data: any, apiKey: string): Promise<{ walls: Wall[], objects: any[], labels: RoomLabel[], generatedImage?: string, rawResponse?: string, dimensions?: { width: number, depth: number } }> {
         console.log("Generating layout V6 (Constrained Architect)...");
 
         if (!apiKey) throw new Error("API Key required");
@@ -252,6 +264,7 @@ export class AIService {
 
             return {
                 walls: visionResult.walls,
+                objects: visionResult.objects,
                 labels: visionResult.labels,
                 generatedImage: base64Image,
                 rawResponse: cleanJson,
@@ -264,9 +277,10 @@ export class AIService {
         }
     }
 
-    private static convertVisionToWalls(data: VisionResponse, targetArea: number | null, constraints?: { landWidth: number, landDepth: number }): { walls: Wall[], labels: RoomLabel[], debugDims?: { width: number, depth: number } } {
+    private static convertVisionToWalls(data: VisionResponse, targetArea: number | null, constraints?: { landWidth: number, landDepth: number }): { walls: Wall[], objects: any[], labels: RoomLabel[], debugDims?: { width: number, depth: number } } {
         const labels: RoomLabel[] = [];
         const candidates: Wall[] = [];
+        const finalObjects: any[] = [];
 
         // 1. SCALING LOGIC
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -536,11 +550,55 @@ export class AIService {
             if (!duplicate) finalWalls.push(p);
         }
 
+        // 5. Map Openings (Doors & Windows)
+        if (data.openings) {
+            data.openings.forEach(op => {
+                const ox = tX(op.x);
+                const oy = tY(op.y);
+                const oWidth = op.width * scale;
+
+                // Find nearest wall segment
+                let bestDist = Infinity;
+                let bestWallIdx = -1;
+                let bestProj: any = null;
+
+                for (let i = 0; i < finalWalls.length; i++) {
+                    const wall = finalWalls[i];
+                    if (wall.isVirtual) continue; // No doors in virtual walls
+
+                    const p = { x: ox, y: oy };
+                    const dist = pointToSegmentDistance(p, wall.start, wall.end);
+                    if (dist < 0.5) { // Within 50cm
+                        if (dist < bestDist) {
+                            bestDist = dist;
+                            bestWallIdx = i;
+                            bestProj = projectPointOnSegment(p, wall.start, wall.end);
+                        }
+                    }
+                }
+
+                if (bestWallIdx !== -1) {
+                    const wall = finalWalls[bestWallIdx];
+                    finalObjects.push({
+                        id: uuidv4(),
+                        wallId: wall.id,
+                        type: op.type,
+                        position: bestProj.t,
+                        width: Math.max(0.6, Math.min(2.0, oWidth)), // Sanitize width
+                        height: op.type === 'door' ? 2.1 : 1.2,
+                        offset: op.type === 'door' ? 0 : 0.9,
+                        hinge: 'left',
+                        openDirection: 'in'
+                    });
+                }
+            });
+        }
+
         const debugDims = {
             width: tX(maxX) - tX(minX),
             depth: tY(maxY) - tY(minY)
         };
 
-        return { walls: finalWalls, labels, debugDims };
+        return { walls: finalWalls, objects: finalObjects, labels, debugDims };
     }
 }
