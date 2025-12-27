@@ -37,7 +37,7 @@ export const Layout: React.FC = () => {
 
     const handleAIGenerate = async (data: any, apiKey: string) => {
         try {
-            const { walls: newWalls, objects: newObjects, labels: newLabels, generatedImage, rawResponse, dimensions } = await AIService.generateLayout(data, apiKey);
+            const { walls: newWalls, objects: newObjects, furniture: newFurniture, labels: newLabels, generatedImage, rawResponse, dimensions } = await AIService.generateLayout(data, apiKey);
 
             if (generatedImage) {
                 setReferenceImage(generatedImage);
@@ -48,12 +48,12 @@ export const Layout: React.FC = () => {
                 setDebugJson(rawResponse);
             }
 
-            // Append new walls, objects, and labels to history
+            // Append new walls, objects, labels, and furniture to history
             setHistory(prev => ({
                 ...prev,
                 walls: [...prev.walls, ...newWalls],
                 objects: [...prev.objects, ...newObjects],
-                furniture: [...(prev.furniture || [])],
+                furniture: [...(prev.furniture || []), ...newFurniture],
                 labels: [...(prev.labels || []), ...newLabels]
             }), false); // Create new history entry
         } catch (e) {

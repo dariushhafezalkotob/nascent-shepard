@@ -3,6 +3,8 @@ import type { Wall, RoomLabel } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getSegmentIntersection, projectPointOnSegment, distance, pointToSegmentDistance } from '../utils/geometry';
+import { FURNITURE_TEMPLATES } from '../constants/FurnitureTemplates';
+import type { Furniture } from '../types';
 
 // --- PROMPTS ---
 
@@ -19,15 +21,21 @@ NO 3D perspective.
 // 2. VISION ANALYSIS PROMPT (High Precision)
 const VISION_PROMPT = (constraints?: { landWidth: number, landDepth: number }) => `
 ACT AS A PRECISION ARCHITECTURAL SCANNER.
-Scan the floor plan image. The THICK BLACK LINES represent the WALLS.
+Scan the floor plan image for WALLS (thick black lines), OPENINGS (doors/windows), and FURNITURE icons.
 ${constraints ? `CONTEXT: This building is designed for a site of ${constraints.landWidth}m x ${constraints.landDepth}m.` : ''}
 
-TASKS:
-1. Identify the building footprint (exterior walls) and all internal rooms.
-2. Use Image Coordinates: (0,0) is the TOP-LEFT of the image.
-3. Provide the 'footprint' as an ordered list of (x,y) points.
-4. Provide all 'rooms' with 'name', 'x', 'y', 'width', and 'height'.
+AVAILABLE FURNITURE TYPES (MAPPED TO ICONS):
+${FURNITURE_TEMPLATES.map(t => `- ${t.id}: ${t.label} (Approx ${t.width}m x ${t.depth}m)`).join('\n')}
 
+TASKS:
+1. Identify the building footprint (exterior walls) as an ordered list of (x,y).
+2. Identify all rooms with 'name', 'x', 'y', 'width', 'height'.
+3. Identify all openings (doors, windows) with 'type', 'x', 'y', 'width'.
+4. Identify all furniture items. For each furniture:
+   - 'templateId': Choose from the available IDs provided above.
+   - 'x', 'y': Center position in image coordinates.
+   - 'rotation': Rotation in degrees (0 = original icon orientation).
+   
 RETURN JSON ONLY:
 {
   "footprint": [{"x": 0, "y": 0}, ...],
@@ -35,7 +43,10 @@ RETURN JSON ONLY:
     {
       "name": "Room Name", 
       "x": 100, "y": 100, "width": 200, "height": 200,
-      "open_edges": ["top", "bottom", "left", "right"]
+      "open_edges": ["top", "bottom", "left", "right"],
+      "furniture": [
+        { "templateId": "sofa-2", "x": 120, "y": 120, "rotation": 0 }
+      ]
     }
   ],
   "openings": [
@@ -53,6 +64,7 @@ interface VisionRoom {
     width: number;
     height: number;
     open_edges?: string[]; // "top" | "bottom" | "left" | "right"
+    furniture?: { templateId: string; x: number; y: number; rotation?: number }[];
 }
 
 interface VisionOpening {
@@ -72,8 +84,8 @@ interface VisionResponse {
 
 export class AIService {
 
-    static async generateLayout(data: any, apiKey: string): Promise<{ walls: Wall[], objects: any[], labels: RoomLabel[], generatedImage?: string, rawResponse?: string, dimensions?: { width: number, depth: number } }> {
-        console.log("Generating layout V6 (Constrained Architect)...");
+    static async generateLayout(data: any, apiKey: string): Promise<{ walls: Wall[], objects: any[], furniture: Furniture[], labels: RoomLabel[], generatedImage?: string, rawResponse?: string, dimensions?: { width: number, depth: number } }> {
+        console.log("Generating layout V7 (Furniture Architect)...");
 
         if (!apiKey) throw new Error("API Key required");
 
@@ -101,7 +113,7 @@ export class AIService {
         console.log(`Feasibility check passed. Required: ~${requiredArea.toFixed(1)}m², Available: ${landArea}m²`);
 
         // 2. PROGRAM GENERATION (Internal Reasoning for prompt)
-        const userPrompt = `A ${bedrooms}-bedroom, ${bathrooms}-bathroom apartment on a ${landWidth}m x ${landDepth}m land. Priorities: ${data.priorities}.`;
+        const userPrompt = `A ${bedrooms}-bedroom, ${bathrooms}-bathroom apartment on a ${landWidth}m x ${landDepth}m land. Priorities: ${data.priorities}. Include typical furniture layout if possible.`;
 
         return this.mockOrRealImplementation(userPrompt, genAI, apiKey, { landWidth, landDepth, targetArea: requiredArea });
     }
@@ -265,6 +277,7 @@ export class AIService {
             return {
                 walls: visionResult.walls,
                 objects: visionResult.objects,
+                furniture: visionResult.furniture,
                 labels: visionResult.labels,
                 generatedImage: base64Image,
                 rawResponse: cleanJson,
@@ -277,10 +290,11 @@ export class AIService {
         }
     }
 
-    private static convertVisionToWalls(data: VisionResponse, targetArea: number | null, constraints?: { landWidth: number, landDepth: number }): { walls: Wall[], objects: any[], labels: RoomLabel[], debugDims?: { width: number, depth: number } } {
+    private static convertVisionToWalls(data: VisionResponse, targetArea: number | null, constraints?: { landWidth: number, landDepth: number }): { walls: Wall[], objects: any[], furniture: Furniture[], labels: RoomLabel[], debugDims?: { width: number, depth: number } } {
         const labels: RoomLabel[] = [];
         const candidates: Wall[] = [];
         const finalObjects: any[] = [];
+        const finalFurniture: Furniture[] = [];
 
         // 1. SCALING LOGIC
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -460,6 +474,26 @@ export class AIService {
                 x: rx + rw / 2,
                 y: ry + rh / 2
             });
+
+            // Process Furniture in room
+            if (room.furniture) {
+                room.furniture.forEach(f => {
+                    const template = FURNITURE_TEMPLATES.find(t => t.id === f.templateId);
+                    if (template) {
+                        finalFurniture.push({
+                            id: uuidv4(),
+                            templateId: template.id,
+                            x: tX(f.x),
+                            y: tY(f.y),
+                            width: template.width,
+                            depth: template.depth,
+                            rotation: f.rotation || 0,
+                            label: template.label,
+                            category: template.category
+                        });
+                    }
+                });
+            }
         });
 
         // --- ROBUST DEDUPLICATION & PLANARIZATION PASS (Vertex-First) ---
@@ -599,6 +633,6 @@ export class AIService {
             depth: tY(maxY) - tY(minY)
         };
 
-        return { walls: finalWalls, objects: finalObjects, labels, debugDims };
+        return { walls: finalWalls, objects: finalObjects, furniture: finalFurniture, labels, debugDims };
     }
 }
