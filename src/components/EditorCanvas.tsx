@@ -21,18 +21,23 @@ export const EditorCanvas: React.FC<EditorCanvasProps> = ({
 }) => {
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (canvas) {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+        const container = canvas?.parentElement;
+        if (!canvas || !container) return;
 
-            const handleResize = () => {
-                canvas.width = window.innerWidth;
-                canvas.height = window.innerHeight;
-            };
+        const resizeCanvas = () => {
+            const { clientWidth, clientHeight } = container;
+            canvas.width = clientWidth;
+            canvas.height = clientHeight;
+        };
 
-            window.addEventListener('resize', handleResize);
-            return () => window.removeEventListener('resize', handleResize);
-        }
+        const observer = new ResizeObserver(() => {
+            resizeCanvas();
+        });
+
+        observer.observe(container);
+        resizeCanvas();
+
+        return () => observer.disconnect();
     }, [canvasRef]);
 
     return (

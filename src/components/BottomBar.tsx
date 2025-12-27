@@ -1,14 +1,22 @@
-import React, { useState } from 'react';
-import { DoorOpen, AppWindow, Square, PenTool, LayoutTemplate, Sofa, PaintBucket, Sparkles } from 'lucide-react';
+import React from 'react';
+import { DoorOpen, AppWindow, Square, PenTool, LayoutTemplate, Sofa, PaintBucket, Sparkles, Bed, Utensils, Bath } from 'lucide-react';
+import { FURNITURE_TEMPLATES } from '../constants/FurnitureTemplates';
 
 interface BottomBarProps {
+    activeTab: 'layout' | 'furniture' | 'surfaces';
+    setActiveTab: (tab: 'layout' | 'furniture' | 'surfaces') => void;
     onToolSelect: (tool: 'wall' | 'select') => void;
     onOpenAI?: () => void;
 }
 
+const CATEGORY_ICONS: Record<string, any> = {
+    living: Sofa,
+    bedroom: Bed,
+    kitchen: Utensils,
+    bathroom: Bath
+};
 
-export const BottomBar: React.FC<BottomBarProps> = ({ onToolSelect, onOpenAI }) => {
-    const [activeTab, setActiveTab] = useState<'layout' | 'furniture' | 'surfaces'>('layout');
+export const BottomBar: React.FC<BottomBarProps> = ({ activeTab, setActiveTab, onToolSelect, onOpenAI }) => {
 
     const tabs = [
         { id: 'layout', label: 'Layout', icon: LayoutTemplate },
@@ -24,8 +32,11 @@ export const BottomBar: React.FC<BottomBarProps> = ({ onToolSelect, onOpenAI }) 
         { type: 'ai', icon: Sparkles, label: 'AI Architect', action: onOpenAI },
     ];
 
-    const handleDragStart = (e: React.DragEvent, type: string) => {
+    const handleDragStart = (e: React.DragEvent, type: string, templateId?: string) => {
         e.dataTransfer.setData('application/react-dnd-type', type);
+        if (templateId) {
+            e.dataTransfer.setData('application/react-dnd-template', templateId);
+        }
         e.dataTransfer.effectAllowed = 'copy';
     };
 
@@ -49,25 +60,38 @@ export const BottomBar: React.FC<BottomBarProps> = ({ onToolSelect, onOpenAI }) 
             </div>
 
             {/* Content */}
-            <div className="h-28 flex items-center px-4 gap-4 overflow-x-auto p-4">
+            <div className="h-28 flex items-center px-4 gap-4 overflow-x-auto p-4 scrollbar-hide">
                 {activeTab === 'layout' && layoutItems.map((item) => (
                     <div
                         key={item.type}
                         draggable={item.draggable}
                         onDragStart={(e) => item.draggable && handleDragStart(e, item.type)}
                         onClick={item.action}
-                        className={`flex flex-col items-center gap-2 group min-w-[72px] ${item.draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
+                        className={`flex flex-col items-center gap-2 group min-w-[80px] ${item.draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
                     >
                         <div className="w-14 h-14 border border-zinc-200 rounded-xl flex items-center justify-center bg-zinc-50 group-hover:border-black group-hover:shadow-md transition-all">
                             <item.icon size={24} className="text-zinc-600 group-hover:text-black" />
                         </div>
-                        <span className="text-xs font-medium text-zinc-500 group-hover:text-black">{item.label}</span>
+                        <span className="text-xs font-medium text-zinc-500 group-hover:text-black whitespace-nowrap">{item.label}</span>
                     </div>
                 ))}
 
-                {activeTab === 'furniture' && (
-                    <div className="text-sm text-zinc-400 italic w-full text-center">Furniture library coming soon...</div>
-                )}
+                {activeTab === 'furniture' && FURNITURE_TEMPLATES.map((item) => {
+                    const Icon = CATEGORY_ICONS[item.category] || Sofa;
+                    return (
+                        <div
+                            key={item.id}
+                            draggable={true}
+                            onDragStart={(e) => handleDragStart(e, 'furniture', item.id)}
+                            className="flex flex-col items-center gap-2 group min-w-[80px] cursor-grab active:cursor-grabbing"
+                        >
+                            <div className="w-14 h-14 border border-zinc-200 rounded-xl flex items-center justify-center bg-zinc-50 group-hover:border-black group-hover:shadow-md transition-all">
+                                <Icon size={24} className="text-zinc-600 group-hover:text-black" />
+                            </div>
+                            <span className="text-xs font-medium text-zinc-500 group-hover:text-black whitespace-nowrap">{item.label}</span>
+                        </div>
+                    );
+                })}
 
                 {activeTab === 'surfaces' && (
                     <div className="text-sm text-zinc-400 italic w-full text-center">Surface materials coming soon...</div>

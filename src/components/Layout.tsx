@@ -29,6 +29,7 @@ export const Layout: React.FC = () => {
         fitToView
     } = useCanvas();
 
+    const [activeTab, setActiveTab] = React.useState<'layout' | 'furniture' | 'surfaces'>('layout');
     const [isAIModalOpen, setIsAIModalOpen] = React.useState(false);
     const [referenceImage, setReferenceImage] = React.useState<string | null>(null);
     const [referenceDims, setReferenceDims] = React.useState<{ width: number, depth: number } | null>(null);
@@ -52,6 +53,7 @@ export const Layout: React.FC = () => {
                 ...prev,
                 walls: [...prev.walls, ...newWalls],
                 objects: [...prev.objects, ...newObjects],
+                furniture: [...(prev.furniture || [])],
                 labels: [...(prev.labels || []), ...newLabels]
             }), false); // Create new history entry
         } catch (e) {
@@ -106,12 +108,19 @@ export const Layout: React.FC = () => {
         }), true); // replace=true (rely on snapshot)
     };
 
+    const updateFurniture = (id: string, updates: any) => {
+        setHistory(prev => ({
+            ...prev,
+            furniture: prev.furniture.map(f => f.id === id ? { ...f, ...updates } : f)
+        }), true); // replace=true (rely on snapshot)
+    };
+
     // Calculate popup position
     const selectedObject = state.selectedId ? state.objects.find(o => o.id === state.selectedId) : null;
 
     return (
         <div className="flex h-screen w-screen overflow-hidden bg-white text-black font-sans">
-            <div className="flex-1 flex flex-col relative">
+            <div className="flex-1 flex flex-col relative min-w-0 shadow-inner">
                 <div className="flex-1 relative overflow-hidden bg-white">
                     <EditorCanvas
                         canvasRef={canvasRef}
@@ -204,6 +213,8 @@ export const Layout: React.FC = () => {
                 </div>
 
                 <BottomBar
+                    activeTab={activeTab}
+                    setActiveTab={setActiveTab}
                     onToolSelect={(mode) => setViewState(prev => ({ ...prev, mode }))}
                     onOpenAI={() => setIsAIModalOpen(true)}
                 />
@@ -215,14 +226,19 @@ export const Layout: React.FC = () => {
                 onGenerate={handleAIGenerate}
             />
 
-            <RightSidebar
-                selectedId={state.selectedId}
-                walls={state.walls}
-                objects={state.objects}
-                updateObject={updateObject}
-                updateWall={updateWall}
-                snapshot={snapshot}
-            />
+            {activeTab === 'furniture' && (
+                <RightSidebar
+                    selectedId={state.selectedId}
+                    walls={state.walls}
+                    objects={state.objects}
+                    furniture={state.furniture}
+                    updateObject={updateObject}
+                    updateWall={updateWall}
+                    updateFurniture={updateFurniture}
+                    snapshot={snapshot}
+                    onDelete={deleteSelection}
+                />
+            )}
         </div>
     );
 };

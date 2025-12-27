@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import type { EditorState, Point, Wall, WallObject, RoomLabel } from '../types';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import type { EditorState, Point, Wall, WallObject, RoomLabel, Furniture } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { distance, pointToSegmentDistance, projectPointOnSegment, sub, add, scale, isPointInPolygon } from '../utils/geometry';
 import { useHistory } from './useHistory';
 import { detectRooms } from '../utils/roomDetection';
+import { FURNITURE_TEMPLATES } from '../constants/FurnitureTemplates';
 
 export const useCanvas = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -20,11 +21,13 @@ export const useCanvas = () => {
     } = useHistory<{
         walls: Wall[];
         objects: WallObject[];
+        furniture: Furniture[];
         labels: RoomLabel[];
         selectedId: string | null;
     }>({
         walls: [],
         objects: [],
+        furniture: [],
         labels: [],
         selectedId: null,
     });
@@ -51,13 +54,17 @@ export const useCanvas = () => {
     const [activeWallId, setActiveWallId] = useState<string | null>(null);
     const [movingWallId, setMovingWallId] = useState<string | null>(null);
     const [movingObjectId, setMovingObjectId] = useState<string | null>(null);
+    const [movingFurnitureId, setMovingFurnitureId] = useState<string | null>(null);
     const [dragOffset, setDragOffset] = useState<Point | null>(null);
 
     // Coordinate conversion
     const screenToWorld = useCallback((p: Point): Point => {
+        const canvas = canvasRef.current;
+        if (!canvas) return { x: 0, y: 0 };
+        // The p.x and p.y here are already relative to the canvas element
         return {
-            x: (p.x - canvasRef.current!.width / 2 - viewState.pan.x) / viewState.zoom,
-            y: (p.y - canvasRef.current!.height / 2 - viewState.pan.y) / viewState.zoom,
+            x: (p.x - canvas.width / 2 - viewState.pan.x) / viewState.zoom,
+            y: (p.y - canvas.height / 2 - viewState.pan.y) / viewState.zoom,
         };
     }, [viewState.pan, viewState.zoom]);
 
@@ -335,6 +342,148 @@ export const useCanvas = () => {
             });
         });
 
+        // Draw Furniture
+        state.furniture.forEach(item => {
+            const isSelected = state.selectedId === item.id;
+            const screenPos = worldToScreen({ x: item.x, y: item.y });
+            const w = item.width * viewState.zoom;
+            const d = item.depth * viewState.zoom;
+            const rotation = (item.rotation || 0) * (Math.PI / 180);
+
+            ctx.save();
+            ctx.translate(screenPos.x, screenPos.y);
+            ctx.rotate(rotation);
+            // Apply flips
+            ctx.scale(item.flipX ? -1 : 1, item.flipY ? -1 : 1);
+
+            // Shadow / Glow for selection
+            if (isSelected) {
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = 'rgba(59, 130, 246, 0.5)';
+            }
+
+            // --- Specialized Rendering Logic ---
+            const drawFurnitureIcon = () => {
+                ctx.fillStyle = isSelected ? '#eff6ff' : '#ffffff';
+                ctx.strokeStyle = isSelected ? '#3b82f6' : '#333333';
+                ctx.lineWidth = 1;
+
+                if (item.category === 'bedroom') {
+                    // Bed Frame
+                    ctx.strokeRect(-w / 2, -d / 2, w, d);
+                    // Pillow(s)
+                    const pillowW = w * 0.35;
+                    const pillowH = d * 0.2;
+                    ctx.strokeRect(-w * 0.4, -d / 2 + d * 0.05, pillowW, pillowH);
+                    if (item.width > 1.2) {
+                        ctx.strokeRect(w * 0.05, -d / 2 + d * 0.05, pillowW, pillowH);
+                    }
+                    // Blanket line
+                    ctx.beginPath();
+                    ctx.moveTo(-w / 2, -d / 2 + d * 0.35);
+                    ctx.lineTo(w / 2, -d / 2 + d * 0.35);
+                    ctx.stroke();
+                } else if (item.category === 'living' && item.templateId.includes('sofa')) {
+                    // Sofa Base
+                    ctx.strokeRect(-w / 2, -d / 2, w, d);
+                    // Backrest
+                    const backrestT = d * 0.2;
+                    ctx.strokeRect(-w / 2, -d / 2, w, backrestT);
+                    // Armrests
+                    const armrestW = w * 0.1;
+                    ctx.strokeRect(-w / 2, -d / 2, armrestW, d);
+                    ctx.strokeRect(w / 2 - armrestW, -d / 2, armrestW, d);
+                } else if (item.templateId === 'dining-table') {
+                    // Table
+                    ctx.strokeRect(-w / 2, -d / 2, w, d);
+                    // Chairs (simplified as small squares)
+                    const chairSize = Math.min(w, d) * 0.25;
+                    // Long sides
+                    const chairCount = Math.floor(w / (chairSize * 1.5));
+                    for (let i = 0; i < chairCount; i++) {
+                        const ox = -w / 2 + (i + 0.5) * (w / chairCount);
+                        ctx.strokeRect(ox - chairSize / 2, -d / 2 - chairSize, chairSize, chairSize);
+                        ctx.strokeRect(ox - chairSize / 2, d / 2, chairSize, chairSize);
+                    }
+                } else if (item.templateId === 'kitchen-island') {
+                    // Island
+                    ctx.strokeRect(-w / 2, -d / 2, w, d);
+                    // Draw stools (circles)
+                    const stoolSize = Math.min(w, d) * 0.2;
+                    const stoolCount = 3;
+                    for (let i = 0; i < stoolCount; i++) {
+                        const ox = -w / 2 + (i + 0.5) * (w / stoolCount);
+                        ctx.beginPath();
+                        ctx.arc(ox, d / 2 + stoolSize * 0.3, stoolSize / 2, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+                } else if (item.templateId === 'stove') {
+                    ctx.strokeRect(-w / 2, -d / 2, w, d);
+                    // Draw 4 burners
+                    const r = Math.min(w, d) * 0.15;
+                    ctx.beginPath();
+                    ctx.arc(-w * 0.2, -d * 0.2, r, 0, Math.PI * 2);
+                    ctx.arc(w * 0.2, -d * 0.2, r, 0, Math.PI * 2);
+                    ctx.arc(-w * 0.2, d * 0.2, r, 0, Math.PI * 2);
+                    ctx.arc(w * 0.2, d * 0.2, r, 0, Math.PI * 2);
+                    ctx.stroke();
+                } else if (item.templateId === 'wardrobe') {
+                    ctx.strokeRect(-w / 2, -d / 2, w, d);
+                    // Cross lines
+                    ctx.beginPath();
+                    ctx.moveTo(-w / 2, -d / 2);
+                    ctx.lineTo(w / 2, d / 2);
+                    ctx.moveTo(w / 2, -d / 2);
+                    ctx.lineTo(-w / 2, d / 2);
+                    ctx.stroke();
+                } else if (item.category === 'bathroom' && item.templateId === 'toilet') {
+                    // Tank
+                    ctx.strokeRect(-w / 2, -d / 2, w, d * 0.3);
+                    // Bowl
+                    ctx.beginPath();
+                    ctx.ellipse(0, d * 0.1, w * 0.35, d * 0.4, 0, 0, Math.PI * 2);
+                    ctx.stroke();
+                } else if (item.templateId === 'bathtub') {
+                    ctx.strokeRect(-w / 2, -d / 2, w, d);
+                    // Inner rim
+                    ctx.beginPath();
+                    ctx.roundRect(-w / 2 + w * 0.1, -d / 2 + d * 0.1, w * 0.8, d * 0.8, d * 0.2);
+                    ctx.stroke();
+                } else if (item.templateId === 'sink' || item.templateId === 'vanity') {
+                    ctx.strokeRect(-w / 2, -d / 2, w, d);
+                    // Basin
+                    ctx.beginPath();
+                    ctx.roundRect(-w * 0.35, -d * 0.3, w * 0.7, d * 0.6, 5);
+                    ctx.stroke();
+                    // Faucet (small circle)
+                    ctx.beginPath();
+                    ctx.arc(0, -d * 0.35, d * 0.05, 0, Math.PI * 2);
+                    ctx.stroke();
+                } else {
+                    // Default fallback: slightly rounded box
+                    ctx.beginPath();
+                    ctx.roundRect(-w / 2, -d / 2, w, d, 2);
+                    ctx.stroke();
+                }
+            };
+
+            drawFurnitureIcon();
+
+            // Label (only if zoom is high enough or selected)
+            if (isSelected || viewState.zoom > 30) {
+                ctx.shadowBlur = 0;
+                const fontSize = Math.max(4, 8 * fontScale);
+                ctx.fillStyle = isSelected ? '#1d4ed8' : '#94a3b8';
+                ctx.font = `${fontSize}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                // Move text to bottom or center
+                ctx.fillText(item.label, 0, d / 2 + 10 * fontScale);
+            }
+
+            ctx.restore();
+        });
+
         // Draw Vertices
         state.walls.forEach(wall => {
             const drawVertex = (p: Point) => {
@@ -446,7 +595,10 @@ export const useCanvas = () => {
 
     // Event Handlers
     const handleMouseDown = (e: React.MouseEvent) => {
-        const mousePos = { x: e.clientX, y: e.clientY };
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const mousePos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
         const worldPos = screenToWorld(mousePos);
 
         if (e.button === 1 || (e.button === 0 && e.altKey)) {
@@ -456,73 +608,103 @@ export const useCanvas = () => {
         }
 
         if (viewState.mode === 'select') {
-            let hitId = null;
+            let hitId: string | null = null;
             let isEndpoint = false;
 
-            // Check objects
-            for (const obj of state.objects) {
-                const wall = state.walls.find(w => w.id === obj.wallId);
-                if (wall) {
-                    const wallVec = { x: wall.end.x - wall.start.x, y: wall.end.y - wall.start.y };
-                    const objPos = {
-                        x: wall.start.x + wallVec.x * obj.position,
-                        y: wall.start.y + wallVec.y * obj.position
-                    };
-                    if (distance(worldPos, objPos) < obj.width / 2) {
-                        hitId = obj.id;
-                        setMovingObjectId(obj.id);
-                        // Snapshot before dragging object
-                        snapshot();
-                        break;
-                    }
+            // Check Furniture (Reverse loop to pick top-most item)
+            const reversedFurniture = [...state.furniture].reverse();
+            for (const item of reversedFurniture) {
+                const lp = worldPos;
+                const dx = lp.x - item.x;
+                const dy = lp.y - item.y;
+                const rad = (item.rotation || 0) * (Math.PI / 180);
+                const rx = dx * Math.cos(-rad) - dy * Math.sin(-rad);
+                const ry = dx * Math.sin(-rad) + dy * Math.cos(-rad);
+
+                if (Math.abs(rx) < item.width / 2 && Math.abs(ry) < item.depth / 2) {
+                    console.log('FURNITURE HIT DETECTED:', item.id, item.label);
+                    hitId = item.id;
+                    setMovingFurnitureId(item.id);
+                    setDragOffset({ x: dx, y: dy });
+                    snapshot();
+                    break;
+                } else {
+                    // console.log('Furniture miss:', item.label, 'rx:', rx, 'ry:', ry, 'halfW:', item.width/2, 'halfD:', item.depth/2);
                 }
             }
 
-            // Check walls (Endpoints first for resizing)
-            if (!hitId) {
-                const threshold = 10 / viewState.zoom;
-                for (const wall of state.walls) {
-                    if (distance(worldPos, wall.start) < threshold) {
-                        hitId = wall.id;
-                        setMovingWallId(wall.id);
-                        setDragOffset({ x: 'start' as any, y: 0 });
-                        isEndpoint = true;
-                        // Snapshot before dragging wall endpoint
-                        snapshot();
-                        break;
-                    }
-                    if (distance(worldPos, wall.end) < threshold) {
-                        hitId = wall.id;
-                        setMovingWallId(wall.id);
-                        setDragOffset({ x: 'end' as any, y: 0 });
-                        isEndpoint = true;
-                        // Snapshot before dragging wall endpoint
-                        snapshot();
-                        break;
-                    }
-                }
-            }
-
-            // Check wall bodies
-            if (!hitId && !isEndpoint) {
-                for (const wall of state.walls) {
-                    if (pointToSegmentDistance(worldPos, wall.start, wall.end) < wall.thickness / 2 + (5 / viewState.zoom)) {
-                        hitId = wall.id;
-                        setMovingWallId(wall.id);
-                        setDragOffset(worldPos);
-                        // Snapshot before dragging wall body
-                        snapshot();
-                        break;
-                    }
-                }
-            }
-
-            // If we selected something different, we might want to track that? 
-            // For now, updating selectedId is a history change.
-            if (state.selectedId !== hitId) {
+            // FORCE UPDATE selection
+            if (hitId) {
+                console.log('SETTING SELECTED ID:', hitId);
                 setHistory(prev => ({ ...prev, selectedId: hitId }), false);
+            } else {
+                setHistory(prev => ({ ...prev, selectedId: null }), false);
             }
+            // Check objects
+            if (!hitId) {
+                for (const obj of state.objects) {
+                    const wall = state.walls.find(w => w.id === obj.wallId);
+                    if (wall) {
+                        const wallVec = { x: wall.end.x - wall.start.x, y: wall.end.y - wall.start.y };
+                        const objPos = {
+                            x: wall.start.x + wallVec.x * obj.position,
+                            y: wall.start.y + wallVec.y * obj.position
+                        };
+                        if (distance(worldPos, objPos) < obj.width / 2) {
+                            hitId = obj.id;
+                            setMovingObjectId(obj.id);
+                            // Snapshot before dragging object
+                            snapshot();
+                            break;
+                        }
+                    }
+                }
 
+                // Check walls (Endpoints first for resizing)
+                if (!hitId) {
+                    const threshold = 10 / viewState.zoom;
+                    for (const wall of state.walls) {
+                        if (distance(worldPos, wall.start) < threshold) {
+                            hitId = wall.id;
+                            setMovingWallId(wall.id);
+                            setDragOffset({ x: 'start' as any, y: 0 });
+                            isEndpoint = true;
+                            // Snapshot before dragging wall endpoint
+                            snapshot();
+                            break;
+                        }
+                        if (distance(worldPos, wall.end) < threshold) {
+                            hitId = wall.id;
+                            setMovingWallId(wall.id);
+                            setDragOffset({ x: 'end' as any, y: 0 });
+                            isEndpoint = true;
+                            // Snapshot before dragging wall endpoint
+                            snapshot();
+                            break;
+                        }
+                    }
+                }
+
+                // Check wall bodies
+                if (!hitId && !isEndpoint) {
+                    for (const wall of state.walls) {
+                        if (pointToSegmentDistance(worldPos, wall.start, wall.end) < wall.thickness / 2 + (5 / viewState.zoom)) {
+                            hitId = wall.id;
+                            setMovingWallId(wall.id);
+                            setDragOffset(worldPos);
+                            // Snapshot before dragging wall body
+                            snapshot();
+                            break;
+                        }
+                    }
+                }
+
+                // If we selected something different, we might want to track that? 
+                // For now, updating selectedId is a history change.
+                if (state.selectedId !== hitId) {
+                    setHistory(prev => ({ ...prev, selectedId: hitId }), false);
+                }
+            }
         } else if (viewState.mode === 'wall') {
             const startPos = snapToVertex(worldPos);
             const newWall: Wall = {
@@ -543,7 +725,10 @@ export const useCanvas = () => {
     };
 
     const handleMouseMove = (e: React.MouseEvent) => {
-        const mousePos = { x: e.clientX, y: e.clientY };
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const mousePos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
         const worldPos = screenToWorld(mousePos);
 
         if (isDragging && dragStart) {
@@ -578,6 +763,48 @@ export const useCanvas = () => {
                     objects: prev.objects.map(o => o.id === movingObjectId ? { ...o, position: t } : o)
                 };
             }, true); // Dragging object: replace
+        }
+
+        if (movingFurnitureId) {
+            setHistory(prev => {
+                const item = prev.furniture.find(f => f.id === movingFurnitureId);
+                if (!item || !dragOffset) return prev;
+
+                let newX = worldPos.x - dragOffset.x;
+                let newY = worldPos.y - dragOffset.y;
+
+                // --- SMART SNAPPING ---
+                const worldThreshold = 0.2; // 20cm snapping radius
+
+                // A. Snap to Room Center
+                const currentRoom = rooms.find(r => {
+                    // Simple bbox check for now
+                    return worldPos.x > r.centroid.x - 2 && worldPos.x < r.centroid.x + 2 &&
+                        worldPos.y > r.centroid.y - 2 && worldPos.y < r.centroid.y + 2;
+                });
+
+                if (currentRoom && distance({ x: newX, y: newY }, currentRoom.centroid) < worldThreshold) {
+                    newX = currentRoom.centroid.x;
+                    newY = currentRoom.centroid.y;
+                }
+
+                // B. Snap to Walls
+                for (const wall of state.walls) {
+                    const dist = pointToSegmentDistance({ x: newX, y: newY }, wall.start, wall.end);
+                    if (dist < worldThreshold + wall.thickness / 2) {
+                        const { point } = projectPointOnSegment({ x: newX, y: newY }, wall.start, wall.end);
+                        // Snap center to wall for now
+                        newX = point.x;
+                        newY = point.y;
+                        break;
+                    }
+                }
+
+                return {
+                    ...prev,
+                    furniture: prev.furniture.map(f => f.id === movingFurnitureId ? { ...f, x: newX, y: newY } : f)
+                };
+            }, true);
         }
 
         if (movingWallId && dragOffset) {
@@ -734,6 +961,7 @@ export const useCanvas = () => {
         setActiveWallId(null);
         setMovingWallId(null);
         setMovingObjectId(null);
+        setMovingFurnitureId(null);
         setDragOffset(null);
     };
 
@@ -750,54 +978,80 @@ export const useCanvas = () => {
     const handleDrop = (e: React.DragEvent) => {
         e.preventDefault();
         const type = e.dataTransfer.getData('application/react-dnd-type');
-        const mousePos = { x: e.clientX, y: e.clientY };
-        const worldPos = screenToWorld(mousePos);
+        const templateId = e.dataTransfer.getData('application/react-dnd-template');
+        const worldPos = screenToWorld({ x: e.clientX, y: e.clientY });
 
-        const hitWall = state.walls.find(w => pointToSegmentDistance(worldPos, w.start, w.end) < w.thickness + (20 / viewState.zoom));
+        if (type === 'furniture' && templateId) {
+            const template = FURNITURE_TEMPLATES.find(t => t.id === templateId);
+            if (template) {
+                const newItem: Furniture = {
+                    id: uuidv4(),
+                    templateId: template.id,
+                    x: worldPos.x,
+                    y: worldPos.y,
+                    width: template.width,
+                    depth: template.depth,
+                    rotation: 0,
+                    label: template.label,
+                    category: template.category
+                };
+                snapshot();
+                setHistory(prev => ({
+                    ...prev,
+                    furniture: [...(prev.furniture || []), newItem],
+                    selectedId: newItem.id
+                }), false);
+            }
+        } else if (type === 'door' || type === 'window') {
+            // Find nearest wall to drop door/window
+            let bestDist = Infinity;
+            let bestWall = null;
+            let bestT = 0;
 
-        if (hitWall && (type === 'door' || type === 'window')) {
-            // Snapshot before drop
-            snapshot();
+            for (const wall of state.walls) {
+                if (wall.isVirtual) continue;
+                const dist = pointToSegmentDistance(worldPos, wall.start, wall.end);
+                if (dist < 0.5 && dist < bestDist) {
+                    const { t } = projectPointOnSegment(worldPos, wall.start, wall.end);
+                    bestDist = dist;
+                    bestWall = wall;
+                    bestT = t;
+                }
+            }
 
-            const { t } = projectPointOnSegment(worldPos, hitWall.start, hitWall.end);
-            const newObj: WallObject = {
-                id: uuidv4(),
-                wallId: hitWall.id,
-                type: type as 'door' | 'window',
-                position: t,
-                width: type === 'door' ? 0.8 : 1.2,
-                height: type === 'door' ? 2.1 : 1.2,
-                offset: type === 'door' ? 0 : 0.9,
-                hinge: 'left',
-                openDirection: 'in'
-            };
-            setHistory(prev => ({
-                ...prev,
-                objects: [...prev.objects, newObj],
-                selectedId: newObj.id
-            }), false);
+            if (bestWall) {
+                const newObj: WallObject = {
+                    id: uuidv4(),
+                    wallId: bestWall.id,
+                    type: type as any,
+                    position: bestT,
+                    width: type === 'door' ? 0.9 : 1.2,
+                    height: type === 'door' ? 2.1 : 1.2,
+                    offset: type === 'door' ? 0 : 0.9,
+                    hinge: 'left',
+                    openDirection: 'in'
+                };
+                snapshot();
+                setHistory(prev => ({
+                    ...prev,
+                    objects: [...prev.objects, newObj],
+                    selectedId: newObj.id
+                }), false);
+            }
         }
     };
 
     const deleteSelection = () => {
         if (!state.selectedId) return;
-
-        setHistory(prev => {
-            const newObjects = prev.objects.filter(o => o.id !== state.selectedId);
-            const newWalls = prev.walls.filter(w => w.id !== state.selectedId);
-
-            // If we deleted a wall, also delete objects on it
-            const remainingObjects = newWalls.length < prev.walls.length
-                ? newObjects.filter(o => newWalls.some(w => w.id === o.wallId))
-                : newObjects;
-
-            return {
-                ...prev,
-                walls: newWalls,
-                objects: remainingObjects,
-                selectedId: null
-            };
-        });
+        snapshot();
+        setHistory(prev => ({
+            ...prev,
+            walls: prev.walls.filter(w => w.id !== state.selectedId),
+            objects: prev.objects.filter(o => o.id !== state.selectedId && o.wallId !== state.selectedId),
+            furniture: (prev.furniture || []).filter(f => f.id !== state.selectedId),
+            labels: prev.labels.filter(l => l.id !== state.selectedId),
+            selectedId: null
+        }), false);
     };
 
     return {

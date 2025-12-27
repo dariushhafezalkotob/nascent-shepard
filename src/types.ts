@@ -24,6 +24,20 @@ export interface WallObject {
     openDirection?: 'in' | 'out'; // For doors
 }
 
+export interface Furniture {
+    id: string;
+    templateId: string;
+    x: number;
+    y: number;
+    width: number;
+    depth: number;
+    rotation: number;
+    label: string;
+    category: 'living' | 'bedroom' | 'kitchen' | 'bathroom';
+    flipX?: boolean;
+    flipY?: boolean;
+}
+
 export interface RoomLabel {
     id: string;
     text: string;
@@ -34,6 +48,7 @@ export interface RoomLabel {
 export interface EditorState {
     walls: Wall[];
     objects: WallObject[];
+    furniture: Furniture[];
     labels: RoomLabel[];
     selectedId: string | null;
     mode: 'select' | 'wall' | 'door' | 'window';
