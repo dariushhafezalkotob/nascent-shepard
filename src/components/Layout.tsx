@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { EditorCanvas } from './EditorCanvas';
+import { ThreeDViewer } from './ThreeDViewer';
 import { AIModal } from './AIModal';
 import { AIService } from '../services/AIService';
 import { RightSidebar } from './RightSidebar';
@@ -29,7 +30,7 @@ export const Layout: React.FC = () => {
         fitToView
     } = useCanvas();
 
-    const [activeTab, setActiveTab] = React.useState<'layout' | 'furniture' | 'surfaces'>('layout');
+    const [activeTab, setActiveTab] = React.useState<'layout' | 'furniture' | 'surfaces' | '3d'>('layout');
     const [isAIModalOpen, setIsAIModalOpen] = React.useState(false);
     const [referenceImage, setReferenceImage] = React.useState<string | null>(null);
     const [referenceDims, setReferenceDims] = React.useState<{ width: number, depth: number } | null>(null);
@@ -122,20 +123,31 @@ export const Layout: React.FC = () => {
         <div className="flex h-screen w-screen overflow-hidden bg-white text-black font-sans">
             <div className="flex-1 flex flex-col relative min-w-0 shadow-inner">
                 <div className="flex-1 relative overflow-hidden bg-white">
-                    <EditorCanvas
-                        canvasRef={canvasRef}
-                        onMouseDown={handleMouseDown}
-                        onMouseMove={handleMouseMove}
-                        onMouseUp={handleMouseUp}
-                        onWheel={handleWheel}
-                        onDrop={handleDrop}
-                        onDragOver={handleDragOver}
-                    />
-                    <NavigationWidget
-                        onZoomIn={zoomIn}
-                        onZoomOut={zoomOut}
-                        onReset={fitToView}
-                    />
+                    {activeTab === '3d' ? (
+                        <ThreeDViewer
+                            walls={state.walls}
+                            objects={state.objects}
+                            furniture={state.furniture}
+                        />
+                    ) : (
+                        <EditorCanvas
+                            canvasRef={canvasRef}
+                            onMouseDown={handleMouseDown}
+                            onMouseMove={handleMouseMove}
+                            onMouseUp={handleMouseUp}
+                            onWheel={handleWheel}
+                            onDrop={handleDrop}
+                            onDragOver={handleDragOver}
+                        />
+                    )}
+
+                    {activeTab !== '3d' && (
+                        <NavigationWidget
+                            onZoomIn={zoomIn}
+                            onZoomOut={zoomOut}
+                            onReset={fitToView}
+                        />
+                    )}
                     {/* <DebugGeminiTest /> - Hidden for now, integrated into flow */}
 
                     {/* Reference Image Panel */}

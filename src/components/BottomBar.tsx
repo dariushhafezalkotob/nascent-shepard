@@ -1,10 +1,10 @@
 import React from 'react';
-import { DoorOpen, AppWindow, Square, PenTool, LayoutTemplate, Sofa, PaintBucket, Sparkles, Bed, Utensils, Bath } from 'lucide-react';
+import { DoorOpen, AppWindow, Square, PenTool, LayoutTemplate, Sofa, PaintBucket, Sparkles, Bed, Utensils, Bath, Boxes } from 'lucide-react';
 import { FURNITURE_TEMPLATES } from '../constants/FurnitureTemplates';
 
 interface BottomBarProps {
-    activeTab: 'layout' | 'furniture' | 'surfaces';
-    setActiveTab: (tab: 'layout' | 'furniture' | 'surfaces') => void;
+    activeTab: 'layout' | 'furniture' | 'surfaces' | '3d';
+    setActiveTab: (tab: 'layout' | 'furniture' | 'surfaces' | '3d') => void;
     onToolSelect: (tool: 'wall' | 'select') => void;
     onOpenAI?: () => void;
 }
@@ -21,6 +21,7 @@ export const BottomBar: React.FC<BottomBarProps> = ({ activeTab, setActiveTab, o
     const tabs = [
         { id: 'layout', label: 'Layout', icon: LayoutTemplate },
         { id: 'furniture', label: 'Furniture', icon: Sofa },
+        { id: '3d', label: '3D View', icon: Boxes },
         { id: 'surfaces', label: 'Wall / Floor', icon: PaintBucket },
     ];
 
@@ -95,6 +96,10 @@ export const BottomBar: React.FC<BottomBarProps> = ({ activeTab, setActiveTab, o
 
                 {activeTab === 'surfaces' && (
                     <div className="text-sm text-zinc-400 italic w-full text-center">Surface materials coming soon...</div>
+                )}
+
+                {activeTab === '3d' && (
+                    <div className="text-sm text-zinc-400 italic w-full text-center">3D Scene generated from your layout. Use mouse to rotate and zoom.</div>
                 )}
             </div>
         </div>
