@@ -18,53 +18,94 @@ View: Top-down orthographic.
 NO 3D perspective.
 `;
 
-// 2. VISION ANALYSIS PROMPT (High Precision)
-const VISION_PROMPT = (constraints?: { landWidth: number, landDepth: number }) => `
+// 2. VISION ANALYSIS PROMPT - STEP A: STRUCTURE
+const STRUCTURAL_PROMPT = (constraints?: { landWidth: number, landDepth: number }) => `
 ACT AS A PRECISION ARCHITECTURAL SCANNER.
-Scan the floor plan image for WALLS (thick black lines), OPENINGS (doors/windows), and FURNITURE icons.
+Scan the floor plan image for STRUCTURE: FOOTPRINT, ROOM BOUNDARIES, and OPENINGS (doors/windows).
 ${constraints ? `CONTEXT: This building is designed for a site of ${constraints.landWidth}m x ${constraints.landDepth}m.` : ''}
-
-AVAILABLE FURNITURE TYPES (MAPPED TO ICONS):
-${FURNITURE_TEMPLATES.map(t => `- ${t.id}: ${t.label} (Approx ${t.width}m x ${t.depth}m)`).join('\n')}
 
 TASKS:
 1. Identify the building footprint (exterior walls) as an ordered list of (x,y).
-2. Identify all rooms with 'name', 'x', 'y', 'width', 'height'.
-3. Identify all openings (doors, windows) with 'type', 'x', 'y', 'width'.
-4. Identify all furniture items. For each furniture:
-   - 'templateId': Choose from the available IDs provided above.
-   - 'x', 'y': Center position in image coordinates.
-   - 'rotation': Rotation in degrees (0 = original icon orientation).
-   
+2. Identify all rooms with 'name', 'center_x', 'center_y', 'width', 'height'.
+   - 'open_edges': ONLY mark an edge as "open" (top/bottom/left/right) if there is NO physical wall.
+3. Identify all openings (doors, windows). For each opening return 'type', 'x', 'y', 'width'.
+   - For doors, CRITICALLY IDENTIFY 'hinge' (left/right) and 'swing' (in/out) from the plan icons.
+   - USE ARCHITECTURAL STANDARDS: 
+     * Bath/Toilet/Hamam doors = 0.8m width.
+     * Bedroom/Living/Room doors = 0.9m width.
+     * Main Entrance/Vorudi doors = 1.0m width.
+
 RETURN JSON ONLY:
 {
   "footprint": [{"x": 0, "y": 0}, ...],
   "rooms": [
     {
       "name": "Room Name", 
-      "x": 100, "y": 100, "width": 200, "height": 200,
-      "open_edges": ["top", "bottom", "left", "right"],
-      "furniture": [
-        { "templateId": "sofa-2", "x": 120, "y": 120, "rotation": 0 }
-      ]
+      "center_x": 100, "center_y": 100, "width": 200, "height": 200,
+      "open_edges": ["top", "left"]
     }
   ],
   "openings": [
-    {"type": "door", "x": 150, "y": 100, "width": 80},
-    {"type": "window", "x": 500, "y": 10, "width": 120}
+    {"type": "door", "x": 150, "y": 100, "width": 80, "hinge": "right", "swing": "in"}
   ],
   "overall_width_meters": ${constraints ? Math.max(constraints.landWidth, constraints.landDepth) : 15.0}
 }
 `;
 
+// 3. VISION ANALYSIS PROMPT - STEP B: FURNITURE
+const FURNITURE_PROMPT = (rooms: { name: string, x: number, y: number, w: number, h: number }[]) => `
+ACT AS AN INTERIOR DESIGNER.
+Using the provided floor plan image and the list of rooms identified below, find all FURNITURE items.
+
+ROOMS CONTEXT (x,y is center):
+${rooms.map(r => `- ${r.name} (Center: ${r.x},${r.y}, Size: ${r.w}x${r.h})`).join('\n')}
+
+AVAILABLE FURNITURE TYPES:
+${FURNITURE_TEMPLATES.map(t => `- ${t.id}: ${t.label} (Approx ${t.width}m x ${t.depth}m)`).join('\n')}
+
+TASKS:
+1. Identify all FURNITURE icons. 
+2. FOR KITCHENS:
+   - Do NOT identify individual cabinets. 
+   - Instead, find the long RECTANGULAR BLOCKS which represent kitchen counters (Kitchen Belts).
+   - Return these as "kitchen_belts" with "start" and "end" points (x, y). 
+   - A straight counter is one belt. An L-shaped kitchen is TWO belts meeting at a corner.
+3. Locate APPLIANCES (sink, stove, fridge) and return them as normal furniture items.
+4. FOR OTHER ITEMS, use these PLACEMENT RULES:
+   - BEDS: Back (headboard) MUST be against a wall.
+   - WARDROBES / TV STANDS: Back MUST be against a wall, facing into the room.
+   - SOFAS / ARMCHAIRS: Should face the ROOM CENTER or TV Stand, never face the wall.
+   - NIGHTSTANDS: Place in PAIRS on both sides of the bed headboard.
+   - TOILETS / SHOWERS: Back MUST be against a wall.
+5. Return 'templateId', 'roomName', 'x', 'y', and 'rotation' (0=North, 90=East, etc).
+
+RETURN JSON ONLY:
+{
+  "items": [
+    { "templateId": "sofa-2", "roomName": "Living Room", "x": 120, "y": 120, "rotation": 90 },
+    { "templateId": "bed-double", "roomName": "Bedroom", "x": 300, "y": 200, "rotation": 0 }
+  ],
+  "kitchen_belts": [
+    { "start": {"x": 100, "y": 100}, "end": {"x": 300, "y": 100} }
+  ]
+}
+`;
+
 interface VisionRoom {
     name: string;
-    x: number;
-    y: number;
+    center_x: number;
+    center_y: number;
     width: number;
     height: number;
     open_edges?: string[]; // "top" | "bottom" | "left" | "right"
-    furniture?: { templateId: string; x: number; y: number; rotation?: number }[];
+}
+
+interface FurnitureItem {
+    templateId: string;
+    roomName: string;
+    x: number;
+    y: number;
+    rotation?: number;
 }
 
 interface VisionOpening {
@@ -72,6 +113,8 @@ interface VisionOpening {
     x: number;
     y: number;
     width: number;
+    hinge?: 'left' | 'right';
+    swing?: 'in' | 'out';
 }
 
 interface VisionResponse {
@@ -80,6 +123,8 @@ interface VisionResponse {
     openings?: VisionOpening[];
     overall_width_meters?: number;
     overall_width?: number;
+    items?: FurnitureItem[];
+    kitchen_belts?: { start: { x: number, y: number }, end: { x: number, y: number } }[];
 }
 
 export class AIService {
@@ -242,9 +287,10 @@ export class AIService {
         const visionModel = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
 
         try {
-            const result = await this.retryWithBackoff(async () => {
+            // STEP 2A: STRUCTURAL SCAN
+            const structuralResp = await this.retryWithBackoff(async () => {
                 return await visionModel.generateContent([
-                    VISION_PROMPT(constraints),
+                    STRUCTURAL_PROMPT(constraints),
                     {
                         inlineData: {
                             data: base64Image!,
@@ -254,22 +300,44 @@ export class AIService {
                 ]);
             }, 3, 2000);
 
-            const textJSON = result.response.text();
-            console.log("Step 2 Output:", textJSON);
+            const structText = structuralResp.response.text();
+            console.log("Step 2A (Structure):", structText);
 
-            const cleanJson = textJSON
-                .replace(/```json/g, '')
-                .replace(/```/g, '')
-                .replace(/^[\s\S]*?\{/, '{')
-                .replace(/\}[^}]*$/, '}')
-                .trim();
+            const cleanStruct = this.extractJSON(structText);
+            const structData: VisionResponse = JSON.parse(cleanStruct);
 
-            const data: VisionResponse = JSON.parse(cleanJson);
+            // STEP 2B: FURNITURE SCAN (Using room context)
+            console.log("Step 2B: Furniture Scan...");
+            const roomsForContext = structData.rooms.map(r => ({
+                name: r.name,
+                x: r.center_x,
+                y: r.center_y,
+                w: r.width,
+                h: r.height
+            }));
+
+            const furnitureResp = await this.retryWithBackoff(async () => {
+                return await visionModel.generateContent([
+                    FURNITURE_PROMPT(roomsForContext),
+                    {
+                        inlineData: {
+                            data: base64Image!,
+                            mimeType: "image/png"
+                        }
+                    }
+                ]);
+            }, 3, 2000);
+
+            const furnText = furnitureResp.response.text();
+            console.log("Step 2B (Furniture):", furnText);
+
+            const cleanFurn = this.extractJSON(furnText);
+            const furnData = JSON.parse(cleanFurn);
 
             // CRITICAL: Ensure constraints are passed and used for scaling
-            const visionResult = this.convertVisionToWalls(data, constraints?.targetArea || null, constraints);
+            const visionResult = this.convertVisionToWalls(structData, furnData.items || [], structData.kitchen_belts || furnData.kitchen_belts || [], constraints?.targetArea || null, constraints);
 
-            const finalWidth = visionResult.debugDims?.width || data.overall_width_meters || data.overall_width || 15;
+            const finalWidth = visionResult.debugDims?.width || structData.overall_width_meters || structData.overall_width || 15;
             const finalDepth = visionResult.debugDims?.depth || 10;
 
             console.log(`>>> FINAL DIMENSIONS: ${finalWidth.toFixed(2)}m x ${finalDepth.toFixed(2)}m`);
@@ -280,7 +348,7 @@ export class AIService {
                 furniture: visionResult.furniture,
                 labels: visionResult.labels,
                 generatedImage: base64Image,
-                rawResponse: cleanJson,
+                rawResponse: cleanStruct + "\n" + cleanFurn,
                 dimensions: { width: finalWidth, depth: finalDepth }
             };
 
@@ -290,7 +358,16 @@ export class AIService {
         }
     }
 
-    private static convertVisionToWalls(data: VisionResponse, targetArea: number | null, constraints?: { landWidth: number, landDepth: number }): { walls: Wall[], objects: any[], furniture: Furniture[], labels: RoomLabel[], debugDims?: { width: number, depth: number } } {
+    private static extractJSON(text: string): string {
+        return text
+            .replace(/```json/g, '')
+            .replace(/```/g, '')
+            .replace(/^[\s\S]*?\{/, '{')
+            .replace(/\}[^}]*$/, '}')
+            .trim();
+    }
+
+    private static convertVisionToWalls(data: VisionResponse, furnitureData: FurnitureItem[], kitchenBelts: { start: { x: number, y: number }, end: { x: number, y: number } }[], targetArea: number | null, constraints?: { landWidth: number, landDepth: number }): { walls: Wall[], objects: any[], furniture: Furniture[], labels: RoomLabel[], debugDims?: { width: number, depth: number } } {
         const labels: RoomLabel[] = [];
         const candidates: Wall[] = [];
         const finalObjects: any[] = [];
@@ -302,8 +379,8 @@ export class AIService {
         const allPoints: { x: number, y: number }[] = [];
         if (data.footprint) allPoints.push(...data.footprint);
         data.rooms.forEach(r => {
-            allPoints.push({ x: r.x, y: r.y });
-            allPoints.push({ x: r.x + r.width, y: r.y + r.height });
+            allPoints.push({ x: r.center_x - r.width / 2, y: r.center_y - r.height / 2 });
+            allPoints.push({ x: r.center_x + r.width / 2, y: r.center_y + r.height / 2 });
         });
 
         allPoints.forEach(p => {
@@ -421,8 +498,8 @@ export class AIService {
 
         // 3. GENERATE ROOM WALLS
         data.rooms.forEach(room => {
-            const rx = tX(room.x);
-            const ry = tY(room.y);
+            const rx = tX(room.center_x - room.width / 2);
+            const ry = tY(room.center_y - room.height / 2);
             const rw = room.width * scale;
             const rh = room.height * scale;
 
@@ -474,27 +551,7 @@ export class AIService {
                 x: rx + rw / 2,
                 y: ry + rh / 2
             });
-
-            // Process Furniture in room
-            if (room.furniture) {
-                room.furniture.forEach(f => {
-                    const template = FURNITURE_TEMPLATES.find(t => t.id === f.templateId);
-                    if (template) {
-                        finalFurniture.push({
-                            id: uuidv4(),
-                            templateId: template.id,
-                            x: tX(f.x),
-                            y: tY(f.y),
-                            width: template.width,
-                            depth: template.depth,
-                            rotation: f.rotation || 0,
-                            label: template.label,
-                            category: template.category
-                        });
-                    }
-                });
-            }
-        });
+        }); // End rooms forEach
 
         // --- ROBUST DEDUPLICATION & PLANARIZATION PASS (Vertex-First) ---
         const SNAP_DIST = 0.15; // 15cm snapping radius
@@ -584,49 +641,302 @@ export class AIService {
             if (!duplicate) finalWalls.push(p);
         }
 
-        // 5. Map Openings (Doors & Windows)
+        // 5. Map Openings (Doors & Windows) - MOVED UP
         if (data.openings) {
             data.openings.forEach(op => {
                 const ox = tX(op.x);
                 const oy = tY(op.y);
                 const oWidth = op.width * scale;
 
-                // Find nearest wall segment
                 let bestDist = Infinity;
                 let bestWallIdx = -1;
                 let bestProj: any = null;
 
                 for (let i = 0; i < finalWalls.length; i++) {
                     const wall = finalWalls[i];
-                    if (wall.isVirtual) continue; // No doors in virtual walls
-
+                    if (wall.isVirtual) continue;
                     const p = { x: ox, y: oy };
                     const dist = pointToSegmentDistance(p, wall.start, wall.end);
-                    if (dist < 0.5) { // Within 50cm
-                        if (dist < bestDist) {
-                            bestDist = dist;
-                            bestWallIdx = i;
-                            bestProj = projectPointOnSegment(p, wall.start, wall.end);
-                        }
+                    if (dist < 0.5 && dist < bestDist) {
+                        bestDist = dist;
+                        bestWallIdx = i;
+                        bestProj = projectPointOnSegment(p, wall.start, wall.end);
                     }
                 }
 
                 if (bestWallIdx !== -1) {
                     const wall = finalWalls[bestWallIdx];
+
+                    // ARCHITECTURAL DOOR STANDARDS Logic
+                    let finalWidth = Math.max(0.6, Math.min(2.0, oWidth));
+                    if (op.type === 'door') {
+                        // Find nearest room to determine door type
+                        let nearestRoom: any = null;
+                        let minDist = Infinity;
+                        (data.rooms || []).forEach(r => {
+                            const d = Math.sqrt(Math.pow(op.x - r.center_x, 2) + Math.pow(op.y - r.center_y, 2));
+                            if (d < minDist) { minDist = d; nearestRoom = r; }
+                        });
+
+                        const roomName = (nearestRoom?.name || '').toLowerCase();
+                        const isBath = roomName.includes('bath') || roomName.includes('toilet') || roomName.includes('wc') ||
+                            roomName.includes('hamam') || roomName.includes('dastshui') || roomName.includes('service');
+                        const isEntrance = roomName.includes('entrance') || roomName.includes('vorudi') || roomName.includes('entry');
+
+                        if (isBath) finalWidth = 0.8;
+                        else if (isEntrance) finalWidth = 1.0;
+                        else finalWidth = 0.9; // Standard room door
+                    }
+
                     finalObjects.push({
                         id: uuidv4(),
                         wallId: wall.id,
                         type: op.type,
                         position: bestProj.t,
-                        width: Math.max(0.6, Math.min(2.0, oWidth)), // Sanitize width
+                        width: finalWidth,
                         height: op.type === 'door' ? 2.1 : 1.2,
                         offset: op.type === 'door' ? 0 : 0.9,
-                        hinge: 'left',
-                        openDirection: 'in'
+                        hinge: op.hinge || 'left',
+                        openDirection: op.swing || 'in'
                     });
                 }
             });
         }
+
+        // 6. PROCESS FURNITURE (Including Appliances & Advanced Snapping)
+        const furnitureBuffer: any[] = [];
+
+        furnitureData.forEach(f => {
+            const template = FURNITURE_TEMPLATES.find(t => t.id === f.templateId);
+            if (!template) return;
+
+            let fx = tX(f.x);
+            let fy = tY(f.y);
+            let fRot = f.rotation || 0;
+
+            const lowerId = f.templateId.toLowerCase();
+            const isHeavy = lowerId.includes('bed') || lowerId.includes('wardrobe') || lowerId.includes('tv-stand') || lowerId.includes('fridge') || lowerId.includes('sink') || lowerId.includes('stove') || lowerId.includes('toilet') || lowerId.includes('shower') || lowerId.includes('bathtub') || lowerId.includes('vanity');
+
+            // --- Advanced Wall Docking Engine ---
+            if (isHeavy) {
+                let bestSnapDist = Infinity;
+                let snappedPos = { x: fx, y: fy };
+                let snappedRot = fRot;
+
+                finalWalls.forEach(wall => {
+                    if (wall.isVirtual) return;
+                    const proj = projectPointOnSegment({ x: fx, y: fy }, wall.start, wall.end);
+                    const d = distance({ x: fx, y: fy }, proj.point);
+                    if (d < 1.0 && d < bestSnapDist) {
+                        bestSnapDist = d;
+
+                        const wallVec = { x: wall.end.x - wall.start.x, y: wall.end.y - wall.start.y };
+                        let normal = { x: -wallVec.y, y: wallVec.x };
+                        const len = Math.sqrt(normal.x * normal.x + normal.y * normal.y);
+                        normal = { x: normal.x / len, y: normal.y / len };
+
+                        const toItem = { x: fx - proj.point.x, y: fy - proj.point.y };
+                        if (toItem.x * normal.x + toItem.y * normal.y < 0) {
+                            normal.x = -normal.x; normal.y = -normal.y;
+                        }
+
+                        // Offset center by half wall + half item depth
+                        const offset = (wall.thickness / 2) + (template.depth / 2);
+                        snappedPos = { x: proj.point.x + normal.x * offset, y: proj.point.y + normal.y * offset };
+
+                        // Orientation: FORCE Face-to-Room for these items if docked
+                        const wallAngle = (Math.atan2(normal.y, normal.x) * 180 / Math.PI) - 90;
+                        snappedRot = wallAngle;
+                    }
+                });
+                fx = snappedPos.x;
+                fy = snappedPos.y;
+                fRot = snappedRot;
+            }
+            else if (lowerId.includes('sofa') || lowerId.includes('armchair') || lowerId.includes('dining') || lowerId.includes('coffee') || lowerId.includes('table') || lowerId.includes('desk') || lowerId.includes('toilet') || lowerId.includes('shower') || lowerId.includes('bathtub') || lowerId.includes('vanity')) {
+                // Universal Room-Facing Orientation
+                // If the item hasn't been specifically rotated by snapping or other rules
+                const nearestRoom = labels.reduce((best, l) => {
+                    const d = distance({ x: fx, y: fy }, l);
+                    return d < best.d ? { l, d } : best;
+                }, { l: labels[0], d: Infinity });
+
+                if (nearestRoom.l) {
+                    const toCenter = { x: nearestRoom.l.x - fx, y: nearestRoom.l.y - fy };
+                    fRot = (Math.atan2(toCenter.y, toCenter.x) * 180 / Math.PI) - 90;
+                }
+            }
+
+            furnitureBuffer.push({
+                id: uuidv4(),
+                templateId: template.id,
+                x: fx,
+                y: fy,
+                width: template.width,
+                depth: template.depth,
+                rotation: fRot,
+                label: template.label,
+                category: template.category
+            });
+        });
+
+        // Nightstand Symmetric Nesting Pass
+        furnitureBuffer.forEach(item => {
+            if (item.templateId.includes('nightstand')) {
+                // Find nearest bed
+                const nearestBed = furnitureBuffer.find(b => b.templateId.includes('bed') && distance(item, b) < 2.0);
+                if (nearestBed) {
+                    const R_rad = nearestBed.rotation * (Math.PI / 180);
+
+                    // Correct Map-to-3D Orientation Vectors
+                    // Map Y increases Down. 3D Z increases towards Footer.
+                    // R=0 -> Footer Down (Map Y+).
+                    // vWidth (Local X+): Points Right of bed.
+                    // vDepth (Local Z+): Points Down/South.
+                    const cosR = Math.cos(R_rad);
+                    const sinR = Math.sin(R_rad);
+
+                    const vWidth = { x: cosR, y: -sinR };
+                    const vDepth = { x: sinR, y: cosR };
+
+                    // Decide left or right based on original AI projection
+                    const toItem = { x: item.x - nearestBed.x, y: item.y - nearestBed.y };
+                    const sideProjection = toItem.x * vWidth.x + toItem.y * vWidth.y;
+                    const side = sideProjection > 0 ? 1 : -1;
+
+                    // 1. Shift along Width (Local X)
+                    const widthShift = side * (nearestBed.width / 2 + item.width / 2 + 0.05);
+
+                    // 2. Shift along Depth (Local Z) to align with Headboard (Local Z = -depth/2)
+                    const headboardShift = -(nearestBed.depth / 2) + (item.depth / 2);
+
+                    item.x = nearestBed.x + vWidth.x * widthShift + vDepth.x * headboardShift;
+                    item.y = nearestBed.y + vWidth.y * widthShift + vDepth.y * headboardShift;
+                    item.rotation = nearestBed.rotation;
+                }
+            }
+        });
+
+        furnitureBuffer.forEach(f => finalFurniture.push(f));
+
+        // 7. PROCESS KITCHEN BELTS (Procedural Cabinetry with Constraints)
+        const extendBelts = (belts: { start: { x: number, y: number }, end: { x: number, y: number } }[]) => {
+            const COUNTER_DEPTH = 0.57; // technical dwg depth
+            const UNIT_SIZE = 0.6;
+
+            for (const belt of belts) {
+                let start = { x: tX(belt.start.x), y: tY(belt.start.y) };
+                let end = { x: tX(belt.end.x), y: tY(belt.end.y) };
+
+                let bestDockDist = Infinity;
+                let dockWall: Wall | null = null;
+                for (const wall of finalWalls) {
+                    if (wall.isVirtual) continue;
+                    const pS = projectPointOnSegment(start, wall.start, wall.end);
+                    const pE = projectPointOnSegment(end, wall.start, wall.end);
+                    const d = (distance(start, pS.point) + distance(end, pE.point)) / 2;
+                    if (d < 1.0 && d < bestDockDist) {
+                        bestDockDist = d;
+                        dockWall = wall;
+                    }
+                }
+
+                let beltRot = 0;
+                let normal = { x: 0, y: 0 };
+                if (dockWall) {
+                    const snapS = projectPointOnSegment(start, dockWall.start, dockWall.end);
+                    const snapE = projectPointOnSegment(end, dockWall.start, dockWall.end);
+                    const wallVec = { x: dockWall.end.x - dockWall.start.x, y: dockWall.end.y - dockWall.start.y };
+                    normal = { x: -wallVec.y, y: wallVec.x };
+                    const len = Math.sqrt(normal.x * normal.x + normal.y * normal.y);
+                    normal = { x: normal.x / len, y: normal.y / len };
+
+                    const toOrig = { x: ((start.x + end.x) / 2) - ((snapS.point.x + snapE.point.x) / 2), y: ((start.y + end.y) / 2) - ((snapS.point.y + snapE.point.y) / 2) };
+                    if (toOrig.x * normal.x + toOrig.y * normal.y < 0) {
+                        normal.x = -normal.x; normal.y = -normal.y;
+                    }
+
+                    const offset = (dockWall.thickness / 2) + (COUNTER_DEPTH / 2);
+                    start = { x: snapS.point.x + normal.x * offset, y: snapS.point.y + normal.y * offset };
+                    end = { x: snapE.point.x + normal.x * offset, y: snapE.point.y + normal.y * offset };
+                    beltRot = (Math.atan2(normal.y, normal.x) * 180 / Math.PI) - 90;
+                } else {
+                    beltRot = Math.atan2(end.y - start.y, end.x - start.x) * (180 / Math.PI);
+                }
+
+                const dist = distance(start, end);
+                if (dist < 0.1) continue;
+
+                // Modules along the belt
+                let currentDist = 0;
+                let step = 0;
+
+                while (currentDist < dist - 0.2) {
+                    const progress = (currentDist + UNIT_SIZE / 2) / dist;
+                    const cx = start.x + (end.x - start.x) * progress;
+                    const cy = start.y + (end.y - start.y) * progress;
+
+                    // 1. COLLISION CHECK: Existing Appliances (Sink/Stove/Fridge)
+                    const appliance = finalFurniture.find(ff =>
+                        (ff.templateId.includes('sink') || ff.templateId.includes('stove') || ff.templateId.includes('fridge')) &&
+                        distance({ x: cx, y: cy }, ff) < 0.35
+                    );
+
+                    if (appliance) {
+                        // Skip base cabinet but maybe keep upper
+                        currentDist += UNIT_SIZE;
+                        continue;
+                    }
+
+                    // 2. MODULE VARIATION LOGIC (Plan #07)
+                    let moduleTemplate = 'kitchen-counter';
+                    if (step % 4 === 1) moduleTemplate = 'kitchen-drawers-3';
+                    if (step % 6 === 3) moduleTemplate = 'kitchen-drawers-5';
+
+                    finalFurniture.push({
+                        id: uuidv4(),
+                        templateId: moduleTemplate,
+                        x: cx,
+                        y: cy,
+                        width: UNIT_SIZE,
+                        depth: COUNTER_DEPTH,
+                        rotation: beltRot,
+                        label: 'Cabinet',
+                        category: 'kitchen'
+                    });
+
+                    // 3. UPPER CABINET (Standardized)
+                    const overlapsWindow = finalObjects.some(obj => {
+                        if (obj.type !== 'window') return false;
+                        const wall = finalWalls.find(w => w.id === obj.wallId);
+                        if (!wall) return false;
+                        const proj = projectPointOnSegment({ x: cx, y: cy }, wall.start, wall.end);
+                        if (distance({ x: cx, y: cy }, proj.point) > 0.6) return false;
+                        const winWidthT = obj.width / distance(wall.start, wall.end);
+                        return proj.t > (obj.position - winWidthT / 2 - 0.1) && proj.t < (obj.position + winWidthT / 2 + 0.1);
+                    });
+
+                    if (!overlapsWindow) {
+                        finalFurniture.push({
+                            id: uuidv4(),
+                            templateId: 'kitchen-upper',
+                            x: cx,
+                            y: cy,
+                            width: UNIT_SIZE,
+                            depth: 0.35,
+                            rotation: beltRot,
+                            label: 'Upper Cabinet',
+                            category: 'kitchen'
+                        });
+                    }
+
+                    currentDist += UNIT_SIZE;
+                    step++;
+                }
+            }
+        };
+
+        extendBelts(kitchenBelts);
 
         const debugDims = {
             width: tX(maxX) - tX(minX),

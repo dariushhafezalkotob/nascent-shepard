@@ -79,6 +79,14 @@ export const useHistory = <T>(initialState: T) => {
         });
     }, []);
 
+    const clear = useCallback((newState: T) => {
+        setState({
+            past: [],
+            present: newState,
+            future: [],
+        });
+    }, []);
+
     return {
         state: state.present,
         set,
@@ -87,7 +95,7 @@ export const useHistory = <T>(initialState: T) => {
         canUndo,
         canRedo,
         snapshot,
-        // Expose full history state if needed for debugging
+        clear,
         history: state
     };
 };

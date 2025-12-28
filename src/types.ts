@@ -54,4 +54,5 @@ export interface EditorState {
     mode: 'select' | 'wall' | 'door' | 'window';
     pan: Point;
     zoom: number;
+    globalWallHeight?: number; // Global height in meters (2.5 - 3.3)
 }

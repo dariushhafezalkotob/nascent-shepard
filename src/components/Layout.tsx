@@ -8,6 +8,8 @@ import { BottomBar } from './BottomBar';
 import { NavigationWidget } from './NavigationWidget';
 import { ObjectPopup } from './ObjectPopup';
 import { useCanvas } from '../hooks/useCanvas';
+import { StorageService } from '../services/StorageService';
+import { SavedPlansModal } from './SavedPlansModal';
 
 export const Layout: React.FC = () => {
     const {
@@ -27,14 +29,34 @@ export const Layout: React.FC = () => {
         deleteSelection,
         zoomIn,
         zoomOut,
-        fitToView
+        fitToView,
+        resetCanvas
     } = useCanvas();
 
     const [activeTab, setActiveTab] = React.useState<'layout' | 'furniture' | 'surfaces' | '3d'>('layout');
     const [isAIModalOpen, setIsAIModalOpen] = React.useState(false);
+    const [isSaveModalOpen, setIsSaveModalOpen] = React.useState(false);
     const [referenceImage, setReferenceImage] = React.useState<string | null>(null);
     const [referenceDims, setReferenceDims] = React.useState<{ width: number, depth: number } | null>(null);
     const [debugJson, setDebugJson] = React.useState<string>("");
+
+    // 1. Initial Load from Autosave
+    useEffect(() => {
+        const saved = StorageService.loadAutosave();
+        // Load if saved data exists (even if empty, to respect a 'New' state)
+        if (saved) {
+            console.log("Persistence: Loading saved session");
+            // Use clearHistory logic for initial load to avoid 'undo' to nothing if it's the first render
+            resetCanvas(); // Reset defaults first
+            setHistory(saved, true); // Then apply saved (replace)
+        }
+    }, [setHistory, resetCanvas]); // Only on mount
+
+    // 2. Autosave on change
+    useEffect(() => {
+        // Only autosave if the state has meaningful content OR we explicitly want to save the 'empty' state
+        StorageService.autosave(state);
+    }, [state]);
 
     const handleAIGenerate = async (data: any, apiKey: string) => {
         try {
@@ -49,45 +71,31 @@ export const Layout: React.FC = () => {
                 setDebugJson(rawResponse);
             }
 
-            // Append new walls, objects, labels, and furniture to history
             setHistory(prev => ({
                 ...prev,
                 walls: [...prev.walls, ...newWalls],
                 objects: [...prev.objects, ...newObjects],
                 furniture: [...(prev.furniture || []), ...newFurniture],
                 labels: [...(prev.labels || []), ...newLabels]
-            }), false); // Create new history entry
+            }), false);
         } catch (e) {
             console.error(e);
-            throw e; // Rethrow for modal to handle
+            throw e;
         }
     };
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            // Check for input focus to facilitate standard text editing undo/redo (optional, browser handles it usually but we might capture it?)
-            // Actually, if we are focused on an input, we might want to let the browser handle text undo.
-            // But our state is managed by React. Browser Undo might not work for React controlled inputs as expected if we don't respect it.
-            // However, usually we want App-level undo if not inside a text field.
-            // If inside text field, Ctrl+Z usually undoes text.
-            // Let's check target.
-            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-                return;
-            }
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
             if (e.key === 'z' && (e.metaKey || e.ctrlKey)) {
-                if (e.shiftKey) {
-                    redo();
-                } else {
-                    undo();
-                }
+                if (e.shiftKey) redo(); else undo();
                 e.preventDefault();
             } else if (e.key === 'y' && (e.metaKey || e.ctrlKey)) {
                 redo();
                 e.preventDefault();
             } else if ((e.key === 'Delete' || e.key === 'Backspace') && !e.repeat) {
                 deleteSelection();
-                // prevent default backspace navigation if any
                 if (e.key === 'Backspace') e.preventDefault();
             }
         };
@@ -99,24 +107,50 @@ export const Layout: React.FC = () => {
         setHistory(prev => ({
             ...prev,
             objects: prev.objects.map(o => o.id === id ? { ...o, ...updates } : o)
-        }), true); // replace=true (rely on snapshot)
+        }), true);
     };
 
     const updateWall = (id: string, updates: any) => {
         setHistory(prev => ({
             ...prev,
             walls: prev.walls.map(w => w.id === id ? { ...w, ...updates } : w)
-        }), true); // replace=true (rely on snapshot)
+        }), true);
     };
 
     const updateFurniture = (id: string, updates: any) => {
         setHistory(prev => ({
             ...prev,
             furniture: prev.furniture.map(f => f.id === id ? { ...f, ...updates } : f)
-        }), true); // replace=true (rely on snapshot)
+        }), true);
     };
 
-    // Calculate popup position
+    const updateGlobalWallHeight = (height: number) => {
+        const h = Math.min(3.3, Math.max(2.5, height));
+        setHistory(prev => ({
+            ...prev,
+            globalWallHeight: h,
+            walls: prev.walls.map(w => ({ ...w, height: h }))
+        }), true);
+    };
+
+    const handleNewPlan = () => {
+        if (confirm("START NEW DESIGN?\n\nThis will clear the current layout. Make sure you've saved if you want to keep it!")) {
+            resetCanvas();
+            setReferenceImage(null);
+            setReferenceDims(null);
+            setDebugJson("");
+            StorageService.clearAutosave();
+            setActiveTab('layout');
+        }
+    };
+
+    const handleLoadPlan = (data: any) => {
+        if (data) {
+            setHistory(data, false);
+            setIsSaveModalOpen(false);
+        }
+    };
+
     const selectedObject = state.selectedId ? state.objects.find(o => o.id === state.selectedId) : null;
 
     return (
@@ -128,6 +162,8 @@ export const Layout: React.FC = () => {
                             walls={state.walls}
                             objects={state.objects}
                             furniture={state.furniture}
+                            globalWallHeight={state.globalWallHeight ?? 2.8}
+                            onUpdateWallHeight={updateGlobalWallHeight}
                         />
                     ) : (
                         <EditorCanvas
@@ -148,69 +184,33 @@ export const Layout: React.FC = () => {
                             onReset={fitToView}
                         />
                     )}
-                    {/* <DebugGeminiTest /> - Hidden for now, integrated into flow */}
 
-                    {/* Reference Image Panel */}
                     {referenceImage && (
                         <div className="absolute top-4 left-4 z-10 bg-white p-2 rounded shadow-lg border border-zinc-200 max-w-[500px]">
                             <div className="flex justify-between items-center mb-2">
-                                <h3 className="text-xs font-bold text-zinc-500 uppercase">AI Reference</h3>
+                                <h3 className="text-xs font-bold text-zinc-500 uppercase">
+                                    AI Reference {referenceDims && `(${referenceDims.width}m x ${referenceDims.depth}m)`}
+                                </h3>
                                 <div className="flex gap-2">
-                                    <button
-                                        onClick={() => {
-                                            // Simple CSS flip for visualization
-                                            const img = document.getElementById('ref-image');
-                                            if (img) {
-                                                const current = img.style.transform;
-                                                img.style.transform = current === 'scaleY(-1)' ? 'none' : 'scaleY(-1)';
-                                            }
-                                        }}
-                                        className="text-xs text-blue-500 hover:text-blue-700"
-                                        title="Flip Vertical (Fix Inversion)"
-                                    >
-                                        Flip Vert
-                                    </button>
-                                    <button
-                                        onClick={() => setReferenceImage(null)}
-                                        className="text-zinc-400 hover:text-black"
-                                    >
-                                        ×
-                                    </button>
+                                    <button onClick={() => setReferenceImage(null)} className="text-zinc-400 hover:text-black">×</button>
                                 </div>
                             </div>
-                            <img
-                                id="ref-image"
-                                src={`data:image/png;base64,${referenceImage}`}
-                                alt="AI Generation"
-                                className="w-full rounded border border-zinc-100 object-cover transition-transform"
-                                style={{
-                                    // Make the image match the real-world aspect ratio
-                                    // UPDATED: Use natural aspect ratio to avoid distortion per user request
-                                    aspectRatio: 'auto',
-                                    maxHeight: '400px'
-                                }}
-                            />
-                            {referenceDims && (
-                                <div className="mt-1 text-[10px] text-zinc-400 text-center">
-                                    {referenceDims.width}m x {referenceDims.depth.toFixed(2)}m
-                                </div>
+                            <img src={`data:image/png;base64,${referenceImage}`} alt="AI Reference" className="w-full rounded border border-zinc-100 object-cover" />
+                            {debugJson && (
+                                <details className="mt-2">
+                                    <summary className="text-[10px] text-zinc-400 cursor-pointer hover:text-zinc-600">View Scan Data</summary>
+                                    <pre className="text-[9px] text-zinc-400 bg-zinc-50 p-2 rounded mt-1 overflow-auto max-h-32 scrollbar-hide">
+                                        {debugJson}
+                                    </pre>
+                                </details>
                             )}
-
-                            {/* Debug Raw JSON Button/View */}
-                            <details className="mt-2 text-[10px]">
-                                <summary className="cursor-pointer text-zinc-500 hover:text-black font-mono">View Raw AI JSON</summary>
-                                <pre className="mt-1 p-1 bg-zinc-50 text-zinc-600 rounded overflow-auto max-h-[200px] border border-zinc-100 whitespace-pre-wrap font-mono">
-                                    {debugJson || "No Data"}
-                                </pre>
-                            </details>
                         </div>
                     )}
 
-                    {/* Object Property Popup */}
                     {selectedObject && (
                         <ObjectPopup
                             object={selectedObject}
-                            position={{ x: window.innerWidth - 280, y: 100 }} // Fixed position on right side
+                            position={{ x: window.innerWidth - 280, y: 100 }}
                             variant="sidebar"
                             onUpdate={updateObject}
                             onClose={() => setHistory(prev => ({ ...prev, selectedId: null }))}
@@ -218,8 +218,7 @@ export const Layout: React.FC = () => {
                         />
                     )}
 
-                    {/* Zoom/Pan Info Overlay */}
-                    <div className="absolute bottom-4 right-4 text-xs text-zinc-400 pointer-events-none select-none bg-white/80 dark:bg-zinc-800/80 p-2 rounded backdrop-blur-sm border border-zinc-200 dark:border-zinc-700">
+                    <div className="absolute bottom-4 right-4 text-xs text-zinc-400 pointer-events-none select-none bg-white/80 p-2 rounded backdrop-blur-sm border border-zinc-200">
                         Zoom: {Math.round(state.zoom * 100)}% | Pan: {Math.round(state.pan.x)}, {Math.round(state.pan.y)}
                     </div>
                 </div>
@@ -227,18 +226,23 @@ export const Layout: React.FC = () => {
                 <BottomBar
                     activeTab={activeTab}
                     setActiveTab={setActiveTab}
-                    onToolSelect={(mode) => setViewState(prev => ({ ...prev, mode }))}
+                    onToolSelect={(mode: any) => setViewState(prev => ({ ...prev, mode }))}
                     onOpenAI={() => setIsAIModalOpen(true)}
+                    onNew={handleNewPlan}
+                    onLoad={() => setIsSaveModalOpen(true)}
                 />
             </div>
 
-            <AIModal
-                isOpen={isAIModalOpen}
-                onClose={() => setIsAIModalOpen(false)}
-                onGenerate={handleAIGenerate}
+            <SavedPlansModal
+                isOpen={isSaveModalOpen}
+                onClose={() => setIsSaveModalOpen(false)}
+                currentState={state}
+                onLoad={handleLoadPlan}
             />
 
-            {activeTab === 'furniture' && (
+            <AIModal isOpen={isAIModalOpen} onClose={() => setIsAIModalOpen(false)} onGenerate={handleAIGenerate} />
+
+            {(activeTab === 'furniture' || activeTab === 'layout') && (
                 <RightSidebar
                     selectedId={state.selectedId}
                     walls={state.walls}
@@ -249,6 +253,8 @@ export const Layout: React.FC = () => {
                     updateFurniture={updateFurniture}
                     snapshot={snapshot}
                     onDelete={deleteSelection}
+                    globalWallHeight={state.globalWallHeight ?? 2.8}
+                    updateGlobalWallHeight={updateGlobalWallHeight}
                 />
             )}
         </div>

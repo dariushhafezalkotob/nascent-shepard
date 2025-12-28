@@ -26,8 +26,15 @@ export const FURNITURE_TEMPLATES: FurnitureTemplate[] = [
     // Kitchen
     { id: 'fridge', label: 'Fridge', category: 'kitchen', width: 0.7, depth: 0.7 },
     { id: 'stove', label: 'Stove', category: 'kitchen', width: 0.6, depth: 0.6 },
-    { id: 'sink', label: 'Sink', category: 'kitchen', width: 0.8, depth: 0.5 },
+    { id: 'sink', label: 'Sink', category: 'kitchen', width: 0.8, depth: 0.6 },
     { id: 'kitchen-island', label: 'Island', category: 'kitchen', width: 2.0, depth: 0.9 },
+    { id: 'kitchen-counter', label: 'Base Cabinet', category: 'kitchen', width: 0.6, depth: 0.56 },
+    { id: 'kitchen-oven', label: 'Oven Module', category: 'kitchen', width: 0.55, depth: 0.56 },
+    { id: 'kitchen-drawers-3', label: '3-Drawer Bank', category: 'kitchen', width: 0.6, depth: 0.56 },
+    { id: 'kitchen-drawers-5', label: '5-Drawer Bank', category: 'kitchen', width: 0.26, depth: 0.56 },
+    { id: 'kitchen-corner-base', label: 'Corner Base', category: 'kitchen', width: 0.9, depth: 0.9 },
+    { id: 'kitchen-upper', label: 'Wall Cabinet', category: 'kitchen', width: 0.6, depth: 0.35 },
+    { id: 'kitchen-corner-upper', label: 'Corner Wall', category: 'kitchen', width: 0.6, depth: 0.6 },
 
     // Bathroom
     { id: 'toilet', label: 'Toilet', category: 'bathroom', width: 0.4, depth: 0.7 },

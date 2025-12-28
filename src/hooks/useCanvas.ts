@@ -16,6 +16,7 @@ export const useCanvas = () => {
         undo,
         redo,
         snapshot,
+        clear: clearHistory,
         canUndo,
         canRedo
     } = useHistory<{
@@ -24,12 +25,14 @@ export const useCanvas = () => {
         furniture: Furniture[];
         labels: RoomLabel[];
         selectedId: string | null;
+        globalWallHeight: number;
     }>({
         walls: [],
         objects: [],
         furniture: [],
         labels: [],
         selectedId: null,
+        globalWallHeight: 2.8,
     });
 
     // View State (Not undoable)
@@ -594,7 +597,7 @@ export const useCanvas = () => {
     };
 
     // Event Handlers
-    const handleMouseDown = (e: React.MouseEvent) => {
+    const handleMouseDown = useCallback((e: React.MouseEvent) => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const rect = canvas.getBoundingClientRect();
@@ -622,20 +625,16 @@ export const useCanvas = () => {
                 const ry = dx * Math.sin(-rad) + dy * Math.cos(-rad);
 
                 if (Math.abs(rx) < item.width / 2 && Math.abs(ry) < item.depth / 2) {
-                    console.log('FURNITURE HIT DETECTED:', item.id, item.label);
                     hitId = item.id;
                     setMovingFurnitureId(item.id);
                     setDragOffset({ x: dx, y: dy });
                     snapshot();
                     break;
-                } else {
-                    // console.log('Furniture miss:', item.label, 'rx:', rx, 'ry:', ry, 'halfW:', item.width/2, 'halfD:', item.depth/2);
                 }
             }
 
             // FORCE UPDATE selection
             if (hitId) {
-                console.log('SETTING SELECTED ID:', hitId);
                 setHistory(prev => ({ ...prev, selectedId: hitId }), false);
             } else {
                 setHistory(prev => ({ ...prev, selectedId: null }), false);
@@ -653,7 +652,6 @@ export const useCanvas = () => {
                         if (distance(worldPos, objPos) < obj.width / 2) {
                             hitId = obj.id;
                             setMovingObjectId(obj.id);
-                            // Snapshot before dragging object
                             snapshot();
                             break;
                         }
@@ -669,7 +667,6 @@ export const useCanvas = () => {
                             setMovingWallId(wall.id);
                             setDragOffset({ x: 'start' as any, y: 0 });
                             isEndpoint = true;
-                            // Snapshot before dragging wall endpoint
                             snapshot();
                             break;
                         }
@@ -678,7 +675,6 @@ export const useCanvas = () => {
                             setMovingWallId(wall.id);
                             setDragOffset({ x: 'end' as any, y: 0 });
                             isEndpoint = true;
-                            // Snapshot before dragging wall endpoint
                             snapshot();
                             break;
                         }
@@ -692,15 +688,12 @@ export const useCanvas = () => {
                             hitId = wall.id;
                             setMovingWallId(wall.id);
                             setDragOffset(worldPos);
-                            // Snapshot before dragging wall body
                             snapshot();
                             break;
                         }
                     }
                 }
 
-                // If we selected something different, we might want to track that? 
-                // For now, updating selectedId is a history change.
                 if (state.selectedId !== hitId) {
                     setHistory(prev => ({ ...prev, selectedId: hitId }), false);
                 }
@@ -711,10 +704,9 @@ export const useCanvas = () => {
                 id: uuidv4(),
                 start: startPos,
                 end: startPos,
-                thickness: 0.2, // 20cm
-                height: 2.4 // 2.4m
+                thickness: 0.2,
+                height: historyState.globalWallHeight
             };
-            // Add wall -> Push to history
             setHistory(prev => ({
                 ...prev,
                 walls: [...prev.walls, newWall],
@@ -722,9 +714,9 @@ export const useCanvas = () => {
             }), false);
             setActiveWallId(newWall.id);
         }
-    };
+    }, [viewState.mode, viewState.zoom, state.furniture, state.objects, state.walls, state.selectedId, screenToWorld, setHistory, snapshot]);
 
-    const handleMouseMove = (e: React.MouseEvent) => {
+    const handleMouseMove = useCallback((e: React.MouseEvent) => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const rect = canvas.getBoundingClientRect();
@@ -739,11 +731,8 @@ export const useCanvas = () => {
             return;
         }
 
-
-
         if (activeWallId) {
             const snappedPos = snapToVertex(worldPos);
-            // Creating new wall - this should replace the last state (which was the wall creation start)
             setHistory(prev => ({
                 ...prev,
                 walls: prev.walls.map(w => w.id === activeWallId ? { ...w, end: snappedPos } : w)
@@ -756,50 +745,20 @@ export const useCanvas = () => {
                 if (!obj) return prev;
                 const wall = prev.walls.find(w => w.id === obj.wallId);
                 if (!wall) return prev;
-
                 const { t } = projectPointOnSegment(worldPos, wall.start, wall.end);
                 return {
                     ...prev,
                     objects: prev.objects.map(o => o.id === movingObjectId ? { ...o, position: t } : o)
                 };
-            }, true); // Dragging object: replace
+            }, true);
         }
 
         if (movingFurnitureId) {
             setHistory(prev => {
                 const item = prev.furniture.find(f => f.id === movingFurnitureId);
                 if (!item || !dragOffset) return prev;
-
                 let newX = worldPos.x - dragOffset.x;
                 let newY = worldPos.y - dragOffset.y;
-
-                // --- SMART SNAPPING ---
-                const worldThreshold = 0.2; // 20cm snapping radius
-
-                // A. Snap to Room Center
-                const currentRoom = rooms.find(r => {
-                    // Simple bbox check for now
-                    return worldPos.x > r.centroid.x - 2 && worldPos.x < r.centroid.x + 2 &&
-                        worldPos.y > r.centroid.y - 2 && worldPos.y < r.centroid.y + 2;
-                });
-
-                if (currentRoom && distance({ x: newX, y: newY }, currentRoom.centroid) < worldThreshold) {
-                    newX = currentRoom.centroid.x;
-                    newY = currentRoom.centroid.y;
-                }
-
-                // B. Snap to Walls
-                for (const wall of state.walls) {
-                    const dist = pointToSegmentDistance({ x: newX, y: newY }, wall.start, wall.end);
-                    if (dist < worldThreshold + wall.thickness / 2) {
-                        const { point } = projectPointOnSegment({ x: newX, y: newY }, wall.start, wall.end);
-                        // Snap center to wall for now
-                        newX = point.x;
-                        newY = point.y;
-                        break;
-                    }
-                }
-
                 return {
                     ...prev,
                     furniture: prev.furniture.map(f => f.id === movingFurnitureId ? { ...f, x: newX, y: newY } : f)
@@ -808,17 +767,12 @@ export const useCanvas = () => {
         }
 
         if (movingWallId && dragOffset) {
-            // Apply Shift Lock for Wall Dragging
             let currentPos = worldPos;
-
             if (e.shiftKey) {
                 const dx = Math.abs(worldPos.x - dragOffset.x);
                 const dy = Math.abs(worldPos.y - dragOffset.y);
-                if (dx > dy) {
-                    currentPos = { x: worldPos.x, y: dragOffset.y };
-                } else {
-                    currentPos = { x: dragOffset.x, y: worldPos.y };
-                }
+                if (dx > dy) currentPos = { x: worldPos.x, y: dragOffset.y };
+                else currentPos = { x: dragOffset.x, y: worldPos.y };
             }
 
             if ((dragOffset.x as any) === 'start') {
@@ -828,41 +782,22 @@ export const useCanvas = () => {
                     if (!movingWall) return prev;
                     const oldStart = movingWall.start;
                     const oldEnd = movingWall.end;
-                    const newStart = snappedPos; // Use snapped locked pos
-                    const newEnd = oldEnd;
-
                     return {
                         ...prev,
                         walls: prev.walls.map(w => {
                             let start = w.start;
                             let end = w.end;
-
-                            // 1. Update connections into the moving vertex
-                            if (distance(start, oldStart) < 0.001) start = newStart;
-                            if (distance(end, oldStart) < 0.001) end = newStart;
-
-                            // 2. Update T-junctions
-                            // ... (Simplify for brevity or keep existing complex logic?)
-                            // I should preserve the existing T-junction logic but just update 'worldPos' to 'currentPos' 
-                            // actually I need to copy the T-junction logic.
-
-                            // To minimize risk, I will just call the state update with the calculated `newStart`
-                            // But I need to do the T-junction update inside the map.
-
-                            // Re-using the exact logic from previous code block:
+                            if (distance(start, oldStart) < 0.001) start = snappedPos;
+                            if (distance(end, oldStart) < 0.001) end = snappedPos;
                             const wasOnWall = (p: Point) => pointToSegmentDistance(p, oldStart, oldEnd) < 0.05;
-
                             if (wasOnWall(start) && distance(start, oldStart) > 0.05 && distance(start, oldEnd) > 0.05) {
                                 const { t } = projectPointOnSegment(start, oldStart, oldEnd);
-                                // This logic is tricky when the wall definition changes. 
-                                // Ideally we re-project onto the NEW wall segment.
-                                start = add(newStart, scale(sub(newEnd, newStart), t));
+                                start = add(snappedPos, scale(sub(oldEnd, snappedPos), t));
                             }
                             if (wasOnWall(end) && distance(end, oldStart) > 0.05 && distance(end, oldEnd) > 0.05) {
                                 const { t } = projectPointOnSegment(end, oldStart, oldEnd);
-                                end = add(newStart, scale(sub(newEnd, newStart), t));
+                                end = add(snappedPos, scale(sub(oldEnd, snappedPos), t));
                             }
-
                             return { ...w, start, end };
                         })
                     };
@@ -874,85 +809,56 @@ export const useCanvas = () => {
                     if (!movingWall) return prev;
                     const oldStart = movingWall.start;
                     const oldEnd = movingWall.end;
-                    const newStart = oldStart;
-                    const newEnd = snappedPos;
-
                     return {
                         ...prev,
                         walls: prev.walls.map(w => {
                             let start = w.start;
                             let end = w.end;
-
-                            if (distance(start, oldEnd) < 0.001) start = newEnd;
-                            if (distance(end, oldEnd) < 0.001) end = newEnd;
-
+                            if (distance(start, oldEnd) < 0.001) start = snappedPos;
+                            if (distance(end, oldEnd) < 0.001) end = snappedPos;
                             const wasOnWall = (p: Point) => pointToSegmentDistance(p, oldStart, oldEnd) < 0.05;
-
                             if (wasOnWall(start) && distance(start, oldStart) > 0.05 && distance(start, oldEnd) > 0.05) {
                                 const { t } = projectPointOnSegment(start, oldStart, oldEnd);
-                                start = add(newStart, scale(sub(newEnd, newStart), t));
+                                start = add(oldStart, scale(sub(snappedPos, oldStart), t));
                             }
                             if (wasOnWall(end) && distance(end, oldStart) > 0.05 && distance(end, oldEnd) > 0.05) {
                                 const { t } = projectPointOnSegment(end, oldStart, oldEnd);
-                                end = add(newStart, scale(sub(newEnd, newStart), t));
+                                end = add(oldStart, scale(sub(snappedPos, oldStart), t));
                             }
-
                             return { ...w, start, end };
                         })
                     };
                 }, true);
             } else {
-                // DRAGGING WHOLE WALL
                 const dx = currentPos.x - dragOffset.x;
                 const dy = currentPos.y - dragOffset.y;
-
                 setHistory(prev => {
                     const movingWall = prev.walls.find(w => w.id === movingWallId);
                     if (!movingWall) return prev;
-
                     const oldStart = movingWall.start;
                     const oldEnd = movingWall.end;
                     const newStart = { x: oldStart.x + dx, y: oldStart.y + dy };
                     const newEnd = { x: oldEnd.x + dx, y: oldEnd.y + dy };
-
                     return {
                         ...prev,
                         walls: prev.walls.map(w => {
-                            if (w.id === movingWallId) {
-                                return { ...w, start: newStart, end: newEnd };
-                            }
-
-                            // Update connected walls (Vertex Move)
+                            if (w.id === movingWallId) return { ...w, start: newStart, end: newEnd };
                             let start = w.start;
                             let end = w.end;
-
                             if (distance(start, oldStart) < 0.05) start = newStart;
                             else if (distance(start, oldEnd) < 0.05) start = newEnd;
-
                             if (distance(end, oldStart) < 0.05) end = newStart;
                             else if (distance(end, oldEnd) < 0.05) end = newEnd;
-
-                            // Handle T-junctions
-                            // If a wall was attached to the moving wall, it should follow?
-                            // Or if the moving wall slides along another wall?
-                            // For simplicity, we just move attached vertices.
-                            // The previous T-junction logic was complex. We'll simplify:
-                            // Just ensure connected vertices move.
-
                             return { ...w, start, end };
                         })
                     };
                 }, true);
-                // Important: Don't update dragOffset if we want valid relative delta from start?
-                // Actually existing logic updates dragOffset to currentPos.
-                // If we lock axis, currentPos is constrained. So dragOffset becomes constrained.
-                // This works for incremental updates.
                 setDragOffset(currentPos);
             }
         }
-    };
+    }, [screenToWorld, isDragging, dragStart, activeWallId, movingObjectId, movingFurnitureId, movingWallId, dragOffset, setHistory]);
 
-    const handleMouseUp = () => {
+    const handleMouseUp = useCallback(() => {
         if (activeWallId) {
             setViewState(prev => ({ ...prev, mode: 'select' }));
         }
@@ -963,19 +869,19 @@ export const useCanvas = () => {
         setMovingObjectId(null);
         setMovingFurnitureId(null);
         setDragOffset(null);
-    };
+    }, [activeWallId]);
 
-    const handleWheel = (e: React.WheelEvent) => {
+    const handleWheel = useCallback((e: React.WheelEvent) => {
         const newZoom = Math.max(10, Math.min(200, viewState.zoom - e.deltaY * 0.1));
         setViewState(prev => ({ ...prev, zoom: newZoom }));
-    };
+    }, [viewState.zoom]);
 
-    const handleDragOver = (e: React.DragEvent) => {
+    const handleDragOver = useCallback((e: React.DragEvent) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
-    };
+    }, []);
 
-    const handleDrop = (e: React.DragEvent) => {
+    const handleDrop = useCallback((e: React.DragEvent) => {
         e.preventDefault();
         const type = e.dataTransfer.getData('application/react-dnd-type');
         const templateId = e.dataTransfer.getData('application/react-dnd-template');
@@ -1039,9 +945,9 @@ export const useCanvas = () => {
                 }), false);
             }
         }
-    };
+    }, [screenToWorld, state.walls, snapshot, setHistory]);
 
-    const deleteSelection = () => {
+    const deleteSelection = useCallback(() => {
         if (!state.selectedId) return;
         snapshot();
         setHistory(prev => ({
@@ -1052,7 +958,27 @@ export const useCanvas = () => {
             labels: prev.labels.filter(l => l.id !== state.selectedId),
             selectedId: null
         }), false);
-    };
+    }, [state.selectedId, state.walls, snapshot, setHistory]);
+
+    const zoomIn = useCallback(() => setViewState(prev => ({ ...prev, zoom: Math.min(200, prev.zoom * 1.2) })), []);
+    const zoomOut = useCallback(() => setViewState(prev => ({ ...prev, zoom: Math.max(10, prev.zoom / 1.2) })), []);
+    const fitToView = useCallback(() => setViewState(prev => ({ ...prev, zoom: 50, pan: { x: 0, y: 0 } })), []);
+
+    const resetCanvas = useCallback(() => {
+        clearHistory({
+            walls: [],
+            objects: [],
+            furniture: [],
+            labels: [],
+            selectedId: null,
+            globalWallHeight: 2.8,
+        });
+        setViewState({
+            mode: 'select',
+            pan: { x: 0, y: 0 },
+            zoom: 50
+        });
+    }, [clearHistory]);
 
     return {
         canvasRef,
@@ -1072,8 +998,9 @@ export const useCanvas = () => {
         handleDragOver,
         handleDrop,
         worldToScreen,
-        zoomIn: () => setViewState(prev => ({ ...prev, zoom: Math.min(200, prev.zoom * 1.2) })),
-        zoomOut: () => setViewState(prev => ({ ...prev, zoom: Math.max(10, prev.zoom / 1.2) })),
-        fitToView: () => setViewState(prev => ({ ...prev, zoom: 50, pan: { x: 0, y: 0 } }))
+        zoomIn,
+        zoomOut,
+        fitToView,
+        resetCanvas
     };
 };
