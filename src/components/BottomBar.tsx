@@ -41,7 +41,7 @@ export const BottomBar: React.FC<BottomBarProps> = ({
         { type: 'wall', icon: PenTool, label: 'Draw Wall', action: () => onToolSelect('wall') },
         { type: 'door', icon: DoorOpen, label: 'Door', draggable: true },
         { type: 'window', icon: AppWindow, label: 'Window', draggable: true },
-        { type: 'block', icon: Square, label: 'Block', draggable: true },
+        { type: 'opening', icon: Square, label: 'Void', draggable: true },
     ];
 
     const handleDragStart = (e: React.DragEvent, type: string, templateId?: string) => {

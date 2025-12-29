@@ -15,7 +15,7 @@ export interface Wall {
 export interface WallObject {
     id: string;
     wallId: string;
-    type: 'door' | 'window';
+    type: 'door' | 'window' | 'opening';
     position: number; // 0 to 1 (normalized position along the wall)
     width: number;
     height: number;
@@ -51,7 +51,7 @@ export interface EditorState {
     furniture: Furniture[];
     labels: RoomLabel[];
     selectedId: string | null;
-    mode: 'select' | 'wall' | 'door' | 'window';
+    mode: 'select' | 'wall' | 'door' | 'window' | 'opening';
     pan: Point;
     zoom: number;
     globalWallHeight?: number; // Global height in meters (2.5 - 3.3)

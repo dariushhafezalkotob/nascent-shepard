@@ -37,6 +37,7 @@ TOPOLOGICAL CONTINUITY RULES:
 - PROPORTIONAL PARTITIONING: Analyze the layout as a series of subdivisions. If the long axis is divided into multiple rooms, ensure their combined length exactly matches the footprint's length.
 - WALL PRIORITY: Identify walls as continuous straight lines where possible. Do not "jump" between points; follow the structural lines.
 - CORRIDOR STANDARD: Corridors and Hallways MUST have a minimum width of 1.5m. Ensure identified corners reflect this.
+- OPENINGS/VOIDS: Identify gaps in walls without doors as "opening". Ensure they are correctly positioned as WallObjects.
 - IGNORE furniture, appliances, and cabinetry when identifying structural corners.
 
 TASKS:

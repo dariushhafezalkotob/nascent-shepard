@@ -1001,8 +1001,8 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furn
                             />
                         ))}
 
-                        {/* Doors & Windows */}
-                        {objects.map(obj => {
+                        {/* Doors & Windows (Physical sub-meshes) */}
+                        {objects.filter(o => o.type !== 'opening').map(obj => {
                             const parentWall = walls.find(w => w.id === obj.wallId);
                             if (!parentWall) return null;
                             return <WallObjectMesh key={obj.id} obj={obj} wall={parentWall} />;

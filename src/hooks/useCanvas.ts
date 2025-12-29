@@ -333,6 +333,15 @@ export const useCanvas = () => {
                     ctx.lineTo(hingeX, -thickness / 2 * swingDir + (obj.openDirection === 'out' ? -width : width));
                     ctx.strokeStyle = '#000000';
                     ctx.stroke();
+                } else if (obj.type === 'opening') {
+                    // Openings just clear the wall area, no additional graphics
+                    // The clearRect above (line 287) already does the heavy lifting.
+                    // We can optionally draw some dashed boundary lines to indicate it's a selectable area
+                    ctx.strokeStyle = '#cccccc';
+                    ctx.setLineDash([2, 4]);
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(-width / 2, -thickness / 2, width, thickness);
+                    ctx.setLineDash([]);
                 }
 
                 if (state.selectedId === obj.id) {
@@ -908,8 +917,8 @@ export const useCanvas = () => {
                     selectedId: newItem.id
                 }), false);
             }
-        } else if (type === 'door' || type === 'window') {
-            // Find nearest wall to drop door/window
+        } else if (type === 'door' || type === 'window' || type === 'opening') {
+            // Find nearest wall to drop door/window/opening
             let bestDist = Infinity;
             let bestWall = null;
             let bestT = 0;
@@ -931,9 +940,9 @@ export const useCanvas = () => {
                     wallId: bestWall.id,
                     type: type as any,
                     position: bestT,
-                    width: type === 'door' ? 0.9 : 1.2,
-                    height: type === 'door' ? 2.1 : 1.2,
-                    offset: type === 'door' ? 0 : 0.9,
+                    width: type === 'door' ? 0.9 : (type === 'window' ? 1.2 : 1.5),
+                    height: type === 'door' ? 2.1 : (type === 'window' ? 1.2 : 2.1),
+                    offset: type === 'door' ? 0 : (type === 'window' ? 0.9 : 0),
                     hinge: 'left',
                     openDirection: 'in'
                 };
