@@ -118,24 +118,35 @@ export const AIModal: React.FC<AIModalProps> = ({ isOpen, onClose, onGenerate })
                         </div>
                     </div>
 
-                    {/* API Key */}
                     <div className="mt-8 pt-4 border-t border-zinc-200">
-                        <div className="flex flex-col gap-2">
-                            <label className="text-xs font-medium text-zinc-500 uppercase flex justify-between">
-                                OpenRouter API Key
-                                <span className="text-zinc-400 font-normal normal-case">(Optional)</span>
-                            </label>
-                            <input
-                                type="password"
-                                value={apiKey}
-                                onChange={(e) => setApiKey(e.target.value)}
-                                placeholder="sk-or-..."
-                                className="w-full p-2 border border-zinc-200 rounded hover:border-zinc-300 focus:border-indigo-500 outline-none text-sm text-black font-mono"
-                            />
+                        <div className="flex flex-col gap-4">
+                            <div className="flex flex-col gap-1">
+                                <label className="text-xs font-medium text-zinc-500 uppercase">AI Model</label>
+                                <select
+                                    value={(formData as any).model || 'gemini-2.5-flash-image'}
+                                    onChange={(e) => handleInputChange('model', e.target.value)}
+                                    className="w-full p-2 border border-zinc-200 rounded hover:border-zinc-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-sm text-black bg-white transition-colors"
+                                >
+                                    <option value="gemini-2.5-flash-image">Gemini 2.5 Flash Image (Recommended)</option>
+                                    <option value="gemini-3-pro-image-preview">Gemini 3 Pro Image Preview</option>
+                                </select>
+                            </div>
+
+                            <div className="flex flex-col gap-2">
+                                <label className="text-xs font-medium text-zinc-500 uppercase flex justify-between">
+                                    Google AI Studio API Key
+                                </label>
+                                <input
+                                    type="password"
+                                    value={apiKey}
+                                    onChange={(e) => setApiKey(e.target.value)}
+                                    placeholder="Enter your API key..."
+                                    className="w-full p-2 border border-zinc-200 rounded hover:border-zinc-300 focus:border-indigo-500 outline-none text-sm text-black font-mono"
+                                />
+                            </div>
                         </div>
                     </div>
 
-                    {/* Error */}
                     {error && (
                         <div className="mt-4 p-3 bg-red-50 text-red-600 text-sm rounded border border-red-100">
                             {error}

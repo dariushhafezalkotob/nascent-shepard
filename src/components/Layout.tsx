@@ -186,8 +186,8 @@ export const Layout: React.FC = () => {
                     )}
 
                     {referenceImage && (
-                        <div className="absolute top-4 left-4 z-10 bg-white p-2 rounded shadow-lg border border-zinc-200 max-w-[500px]">
-                            <div className="flex justify-between items-center mb-2">
+                        <div className="absolute top-4 left-4 z-10 bg-white p-2 rounded shadow-lg border border-zinc-200 w-[30vw] max-w-[400px] min-w-[200px] max-h-[85vh] flex flex-col overflow-hidden">
+                            <div className="flex justify-between items-center mb-2 flex-shrink-0">
                                 <h3 className="text-xs font-bold text-zinc-500 uppercase">
                                     AI Reference {referenceDims && `(${referenceDims.width}m x ${referenceDims.depth}m)`}
                                 </h3>
@@ -195,15 +195,17 @@ export const Layout: React.FC = () => {
                                     <button onClick={() => setReferenceImage(null)} className="text-zinc-400 hover:text-black">×</button>
                                 </div>
                             </div>
-                            <img src={`data:image/png;base64,${referenceImage}`} alt="AI Reference" className="w-full rounded border border-zinc-100 object-cover" />
-                            {debugJson && (
-                                <details className="mt-2">
-                                    <summary className="text-[10px] text-zinc-400 cursor-pointer hover:text-zinc-600">View Scan Data</summary>
-                                    <pre className="text-[9px] text-zinc-400 bg-zinc-50 p-2 rounded mt-1 overflow-auto max-h-32 scrollbar-hide">
-                                        {debugJson}
-                                    </pre>
-                                </details>
-                            )}
+                            <div className="flex-1 overflow-auto scrollbar-hide">
+                                <img src={`data:image/png;base64,${referenceImage}`} alt="AI Reference" className="w-full h-auto max-h-full rounded border border-zinc-100 object-contain" />
+                                {debugJson && (
+                                    <details className="mt-2">
+                                        <summary className="text-[10px] text-zinc-400 cursor-pointer hover:text-zinc-600">View Scan Data</summary>
+                                        <pre className="text-[9px] text-zinc-400 bg-zinc-50 p-2 rounded mt-1 overflow-auto max-h-32 scrollbar-hide">
+                                            {debugJson}
+                                        </pre>
+                                    </details>
+                                )}
+                            </div>
                         </div>
                     )}
 

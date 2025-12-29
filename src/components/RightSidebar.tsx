@@ -11,6 +11,8 @@ interface RightSidebarProps {
     updateFurniture: (id: string, updates: Partial<Furniture>) => void;
     snapshot: () => void;
     onDelete: () => void;
+    globalWallHeight: number;
+    updateGlobalWallHeight: (height: number) => void;
 }
 
 export const RightSidebar: React.FC<RightSidebarProps> = ({
@@ -22,7 +24,9 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     updateWall,
     updateFurniture,
     snapshot,
-    onDelete
+    onDelete,
+    globalWallHeight,
+    updateGlobalWallHeight
 }) => {
     const selectedWall = walls.find((w) => w.id === selectedId);
     const selectedObject = objects.find((o) => o.id === selectedId);
@@ -344,6 +348,40 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                     </>
                 )}
             </div>
+
+            {!selectedId && (
+                <div className="mt-auto p-6 border-t border-zinc-200 bg-zinc-50">
+                    <h3 className="text-xs font-bold text-zinc-900 uppercase tracking-wide flex items-center gap-2 mb-4">
+                        <Settings2 size={14} /> Global Settings
+                    </h3>
+                    <div className="space-y-1.5">
+                        <label className="text-[10px] font-semibold text-zinc-500 uppercase flex items-center gap-1.5">
+                            <ArrowUpFromLine size={12} /> Default Wall Height
+                        </label>
+                        <div className="relative">
+                            <input
+                                type="number"
+                                value={globalWallHeight}
+                                onChange={(e) => updateGlobalWallHeight(Number(e.target.value))}
+                                onFocus={snapshot}
+                                step="0.1"
+                                className="w-full px-3 py-2 bg-white border border-zinc-200 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                            />
+                            <span className="absolute right-3 top-2 text-xs text-zinc-400">m</span>
+                        </div>
+                        <input
+                            type="range"
+                            min="2.5"
+                            max="3.3"
+                            step="0.1"
+                            value={globalWallHeight}
+                            onChange={(e) => updateGlobalWallHeight(Number(e.target.value))}
+                            onMouseDown={snapshot}
+                            className="w-full mt-2 accent-blue-500"
+                        />
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

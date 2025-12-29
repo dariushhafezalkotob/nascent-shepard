@@ -9,31 +9,40 @@ import type { Furniture } from '../types';
 // --- PROMPTS ---
 
 // 1. IMAGE GENERATION PROMPT
-// We ask for a clean, high-contrast plan.
-const IMAGE_GEN_PROMPT_TEMPLATE = (userPrompt: string, constraints?: { landWidth: number, landDepth: number }) => `
-Create a high-contrast, top-down 2D architectural floor plan for: ${userPrompt}.
-${constraints ? `IMPORTANT: The building must fit precisely within a ${constraints.landWidth}m x ${constraints.landDepth}m rectangular site. Determine the OPTIMAL PLACEMENT of the building on the site for best functionality and layout.` : ''}
-Style: Technical drawing, white background, black walls, distinct room labels if possible.
-View: Top-down orthographic.
-NO 3D perspective.
+const IMAGE_GEN_PROMPT_TEMPLATE = (userPrompt: string, constraints?: { landWidth: number, landDepth: number }, aspectRatio?: string) => `
+IMAGE_GENERATION_TASK: Generate a technical 2D floor plan.
+OBJECTIVE: Technical drawing of ${userPrompt}.
+${constraints ? `SITE_CONSTRAINTS: ${constraints.landWidth}m x ${constraints.landDepth}m rectangular site.` : ''}
+${aspectRatio ? `ASPECT_RATIO: ${aspectRatio}.` : ''}
+TECHNICAL_SPECIFICATIONS:
+- VIEW: Top-down 2D orthographic projection.
+- STYLE: Clean high-contrast architectural technical drawing. 
+- STANDARD_SYMBOLS: Use only standard ISO architectural symbols for doors, windows, and furniture.
+- CLEANLINESS: AVOID drawing extra shapes such as balcony railings, facade textures, decorative signs, or complex fixtures not included in walls/windows/standard furniture.
+- CONTENT: Precise walls, room labels, openings, furniture layout (beds, sofas, kitchen belts, toilets, etc.).
+- CORRIDORS: Minimum width must be 1.5 meters.
+- OUTPUT_FORMAT: IMAGE ONLY. No preamble, no markers outside the plan.
 `;
 
 // 2. VISION ANALYSIS PROMPT - STEP A: STRUCTURE
 const STRUCTURAL_PROMPT = (constraints?: { landWidth: number, landDepth: number }) => `
 ACT AS A PRECISION ARCHITECTURAL SCANNER.
-Scan the floor plan image for STRUCTURE: FOOTPRINT, ROOM BOUNDARIES, and OPENINGS (doors/windows).
+Scan the floor plan image for STRUCTURE: FOOTPRINT, ROOM BOUNDARIES, and OPENINGS.
 ${constraints ? `CONTEXT: This building is designed for a site of ${constraints.landWidth}m x ${constraints.landDepth}m.` : ''}
 
+TOPOLOGICAL CONTINUITY RULES:
+- SHARED VERTICES: Adjacent rooms MUST share the EXACT SAME coordinates for their common boundary. NO GAPS or "ghost corridors" are allowed between touching rooms.
+- FOOTPRINT SATURATION: INTERNAL ROOMS must collectively fill 100% of the internal building area. There should be NO empty gaps between the internal room boundaries and the external footprint walls.
+- OUTSIDE-IN LOGIC: First identify the overall building footprint, then partition it into internal spaces. 
+- PROPORTIONAL PARTITIONING: Analyze the layout as a series of subdivisions. If the long axis is divided into multiple rooms, ensure their combined length exactly matches the footprint's length.
+- WALL PRIORITY: Identify walls as continuous straight lines where possible. Do not "jump" between points; follow the structural lines.
+- CORRIDOR STANDARD: Corridors and Hallways MUST have a minimum width of 1.5m. Ensure identified corners reflect this.
+- IGNORE furniture, appliances, and cabinetry when identifying structural corners.
+
 TASKS:
-1. Identify the building footprint (exterior walls) as an ordered list of (x,y).
-2. Identify all rooms with 'name', 'center_x', 'center_y', 'width', 'height'.
-   - 'open_edges': ONLY mark an edge as "open" (top/bottom/left/right) if there is NO physical wall.
-3. Identify all openings (doors, windows). For each opening return 'type', 'x', 'y', 'width'.
-   - For doors, CRITICALLY IDENTIFY 'hinge' (left/right) and 'swing' (in/out) from the plan icons.
-   - USE ARCHITECTURAL STANDARDS: 
-     * Bath/Toilet/Hamam doors = 0.8m width.
-     * Bedroom/Living/Room doors = 0.9m width.
-     * Main Entrance/Vorudi doors = 1.0m width.
+1. Identify the building footprint (exterior walls) as an ordered list of points.
+2. Identify all rooms and corridors. For each space return 'name' and 'corners' (polygon).
+3. Identify all openings (doors, windows) return 'type', 'x', 'y', 'width'.
 
 RETURN JSON ONLY:
 {
@@ -41,8 +50,7 @@ RETURN JSON ONLY:
   "rooms": [
     {
       "name": "Room Name", 
-      "center_x": 100, "center_y": 100, "width": 200, "height": 200,
-      "open_edges": ["top", "left"]
+      "corners": [{"x": 100, "y": 100}, {"x": 200, "y": 100}, {"x": 200, "y": 200}, {"x": 100, "y": 200}]
     }
   ],
   "openings": [
@@ -93,11 +101,7 @@ RETURN JSON ONLY:
 
 interface VisionRoom {
     name: string;
-    center_x: number;
-    center_y: number;
-    width: number;
-    height: number;
-    open_edges?: string[]; // "top" | "bottom" | "left" | "right"
+    corners: { x: number; y: number }[];
 }
 
 interface FurnitureItem {
@@ -160,7 +164,10 @@ export class AIService {
         // 2. PROGRAM GENERATION (Internal Reasoning for prompt)
         const userPrompt = `A ${bedrooms}-bedroom, ${bathrooms}-bathroom apartment on a ${landWidth}m x ${landDepth}m land. Priorities: ${data.priorities}. Include typical furniture layout if possible.`;
 
-        return this.mockOrRealImplementation(userPrompt, genAI, apiKey, { landWidth, landDepth, targetArea: requiredArea });
+        // Extract selected model or default
+        const selectedModel = data.model || 'gemini-2.5-flash-image';
+
+        return this.mockOrRealImplementation(userPrompt, genAI, apiKey, { landWidth, landDepth, targetArea: requiredArea }, selectedModel);
     }
 
     private static async retryWithBackoff<T>(
@@ -218,23 +225,59 @@ export class AIService {
     }
 
     // Expose this for testing/debugging (Widget)
-    static async generateImage(userPrompt: string, apiKey: string): Promise<string> {
+    static async generateImage(userPrompt: string, apiKey: string, modelName: string = 'gemini-2.5-flash-image'): Promise<string> {
         if (!apiKey) throw new Error("API Key required");
         const genAI = new GoogleGenerativeAI(apiKey);
 
-        console.log("Requesting Image from gemini-2.5-flash-image...");
+        console.log(`Requesting Image from ${modelName}...`);
 
         // Helper to run image gen with retries
         let base64Image: string | null = null;
 
         try {
-            const imgModel = genAI.getGenerativeModel({ model: "models/gemini-2.5-flash-image" });
+            // @ts-ignore - internal usage
+            const constraints = (this as any)._lastConstraints;
+
+            // Determine Aspect Ratio
+            let aspectRatio = "1:1";
+            if (constraints && constraints.landWidth && constraints.landDepth) {
+                const ratio = constraints.landWidth / constraints.landDepth;
+                if (ratio > 1.4) aspectRatio = "16:9";
+                else if (ratio > 1.1) aspectRatio = "4:3";
+                else if (ratio < 0.7) aspectRatio = "9:16";
+                else if (ratio < 0.9) aspectRatio = "3:4";
+            }
+            console.log(`Using Aspect Ratio: ${aspectRatio}`);
+
+            let imgModel;
+            let finalPrompt;
+
+            if (modelName === 'gemini-2.5-flash-image' || modelName.includes('gemini-3')) {
+                // CONFIG-BASED (New API)
+                imgModel = genAI.getGenerativeModel({
+                    model: modelName,
+                    generationConfig: {
+                        // @ts-ignore
+                        candidateCount: 1,
+                        // @ts-ignore
+                        responseModalities: ["IMAGE"],
+                        // @ts-ignore
+                        imageConfig: {
+                            aspectRatio: aspectRatio
+                        }
+                    }
+                });
+                finalPrompt = IMAGE_GEN_PROMPT_TEMPLATE(userPrompt, constraints);
+            } else {
+                // PROMPT-BASED (Fallback for v2.0 or others)
+                console.log("Using prompt-based aspect ratio enforcement.");
+                imgModel = genAI.getGenerativeModel({ model: modelName });
+                finalPrompt = IMAGE_GEN_PROMPT_TEMPLATE(userPrompt, constraints, aspectRatio);
+            }
 
             const result = await this.retryWithBackoff(async () => {
-                // @ts-ignore - internal usage
-                const constraints = (this as any)._lastConstraints;
-                return await imgModel.generateContent(IMAGE_GEN_PROMPT_TEMPLATE(userPrompt, constraints));
-            }, 3, 5000); // Start with 5s delay just in case
+                return await imgModel.generateContent(finalPrompt);
+            }, 3, 5000);
 
             const response = await result.response;
 
@@ -272,14 +315,14 @@ export class AIService {
         }
     }
 
-    private static async mockOrRealImplementation(userPrompt: string, genAI: GoogleGenerativeAI, apiKey: string, constraints?: { landWidth: number, landDepth: number, targetArea: number }) {
+    private static async mockOrRealImplementation(userPrompt: string, genAI: GoogleGenerativeAI, apiKey: string, constraints?: { landWidth: number, landDepth: number, targetArea: number }, modelName: string = 'gemini-2.5-flash-image') {
 
         // Store constraints temporarily for sub-calls (Hack for static method flow)
         (this as any)._lastConstraints = constraints;
 
         // --- STEP 1: IMAGE GENERATION ---
         console.log("Step 1: Dreaming Floor Plan...");
-        const base64Image = await this.generateImage(userPrompt, apiKey);
+        const base64Image = await this.generateImage(userPrompt, apiKey, modelName);
 
         // --- STEP 2: VISION ANALYSIS ---
         console.log("Step 2: Vision Analysis...");
@@ -308,13 +351,20 @@ export class AIService {
 
             // STEP 2B: FURNITURE SCAN (Using room context)
             console.log("Step 2B: Furniture Scan...");
-            const roomsForContext = structData.rooms.map(r => ({
-                name: r.name,
-                x: r.center_x,
-                y: r.center_y,
-                w: r.width,
-                h: r.height
-            }));
+            const roomsForContext = structData.rooms.map(r => {
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                r.corners.forEach(p => {
+                    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+                    if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+                });
+                return {
+                    name: r.name,
+                    x: (minX + maxX) / 2,
+                    y: (minY + maxY) / 2,
+                    w: maxX - minX,
+                    h: maxY - minY
+                };
+            });
 
             const furnitureResp = await this.retryWithBackoff(async () => {
                 return await visionModel.generateContent([
@@ -379,8 +429,7 @@ export class AIService {
         const allPoints: { x: number, y: number }[] = [];
         if (data.footprint) allPoints.push(...data.footprint);
         data.rooms.forEach(r => {
-            allPoints.push({ x: r.center_x - r.width / 2, y: r.center_y - r.height / 2 });
-            allPoints.push({ x: r.center_x + r.width / 2, y: r.center_y + r.height / 2 });
+            if (r.corners) allPoints.push(...r.corners);
         });
 
         allPoints.forEach(p => {
@@ -396,19 +445,25 @@ export class AIService {
         const unitWidth = maxX - minX;
         const unitHeight = maxY - minY;
 
-        // SCALING STRATEGY: DIRECT MAPPING TO SITE
+        // SCALING STRATEGY: MAP DRAWING'S LONGEST AXIS TO SITE'S LONGEST AXIS (Refined)
         let scale = 0.015; // Default fallback
 
-        const landLongest = constraints ? Math.max(Number(constraints.landWidth) || 0, Number(constraints.landDepth) || 0) : 0;
+        const landW = constraints ? Number(constraints.landWidth) || 0 : 0;
+        const landD = constraints ? Number(constraints.landDepth) || 0 : 0;
+        const landLongest = Math.max(landW, landD);
 
         if (landLongest > 0) {
-            // User requested: Use the longest dimension from input as the master scale
-            const maxUnitDim = Math.max(unitWidth, unitHeight);
-            scale = maxUnitDim > 0 ? landLongest / maxUnitDim : 0.015;
-            console.log(`>>> SCALER: Strict Mapping. Master Dimension=${landLongest}m. Scale=${scale.toFixed(6)}`);
+            // Priority 1: Strict "Longest-to-Longest" Mapping
+            // 1. Find the longest axis of the Drawing units (D1)
+            const drawingLongest = Math.max(unitWidth, unitHeight);
+
+            // 2. Set scale so D1 = L1 (Site Longest)
+            scale = drawingLongest > 0 ? landLongest / drawingLongest : 0.015;
+
+            console.log(`>>> SCALER [REFINED]: Mapping Drawing Longest (${drawingLongest.toFixed(1)} units) to Site Longest (${landLongest}m). Scale=${scale.toFixed(6)}`);
         }
         else if (targetArea && data.footprint && data.footprint.length > 2) {
-            // Area-based scaling fallback
+            // Priority 2: Area-based scaling fallback
             let unitArea = 0;
             for (let i = 0; i < data.footprint.length; i++) {
                 const j = (i + 1) % data.footprint.length;
@@ -421,19 +476,18 @@ export class AIService {
                 console.log(`>>> SCALER: Area Mapping. Target=${targetArea}m². Scale=${scale.toFixed(6)}`);
             }
         } else {
-            // AI Hallucination fallback
-            const maxUnitDim = Math.max(unitWidth, unitHeight);
-            const realMaxLengthMeters = data.overall_width_meters || data.overall_width || 15.0;
-            scale = maxUnitDim > 0 ? realMaxLengthMeters / maxUnitDim : 0.015;
-            console.log(`>>> SCALER: Fallback Mapping. RealMax=${realMaxLengthMeters}m. Scale=${scale.toFixed(6)}`);
+            // Priority 3: AI overall_width_meters fallback
+            const unitLongest = Math.max(unitWidth, unitHeight);
+            const aiReportedMax = data.overall_width_meters || data.overall_width || 15.0;
+            scale = unitLongest > 0 ? aiReportedMax / unitLongest : 0.015;
+            console.log(`>>> SCALER: Fallback AI reported Max (${aiReportedMax}m). Scale=${scale.toFixed(6)}`);
         }
 
         // OFFSET & TRANSFORM
-        const transformX = (val: number) => (val - minX) * scale;
-        const transformY = (val: number) => (val - minY) * scale;
-
-        const tX = (val: number) => transformX(val);
-        const tY = (val: number) => transformY(val);
+        // We center the building within the frame defined by landWidth/landDepth if they exist,
+        // otherwise we just use the minX/minY offset.
+        const tX = (val: number) => (val - minX) * scale;
+        const tY = (val: number) => (val - minY) * scale;
 
         const EXTERNAL_THICKNESS = 0.2; // 20cm
         const INTERNAL_THICKNESS = 0.1; // 10cm
@@ -498,27 +552,25 @@ export class AIService {
 
         // 3. GENERATE ROOM WALLS
         data.rooms.forEach(room => {
-            const rx = tX(room.center_x - room.width / 2);
-            const ry = tY(room.center_y - room.height / 2);
-            const rw = room.width * scale;
-            const rh = room.height * scale;
+            if (!room.corners || room.corners.length < 2) return;
 
-            // 4 Candidate Segments
-            const segments = [
-                { start: { x: rx, y: ry }, end: { x: rx + rw, y: ry } },         // Top
-                { start: { x: rx + rw, y: ry }, end: { x: rx + rw, y: ry + rh } }, // Right
-                { start: { x: rx + rw, y: ry + rh }, end: { x: rx, y: ry + rh } }, // Bottom
-                { start: { x: rx, y: ry + rh }, end: { x: rx, y: ry } }          // Left
-            ];
+            for (let i = 0; i < room.corners.length; i++) {
+                const p1 = room.corners[i];
+                const p2 = room.corners[(i + 1) % room.corners.length];
 
-            segments.forEach(seg => {
+                const start = { x: tX(p1.x), y: tY(p1.y) };
+                const end = { x: tX(p2.x), y: tY(p2.y) };
+
+                // Skip zero-length walls
+                if (distance(start, end) < 0.05) continue;
+
                 // Check overlap with External Walls
                 let isExterior = false;
                 const THRESHOLD = 0.4; // 40cm tolerance
 
                 for (const fw of footprintWalls) {
-                    const midX = (seg.start.x + seg.end.x) / 2;
-                    const midY = (seg.start.y + seg.end.y) / 2;
+                    const midX = (start.x + end.x) / 2;
+                    const midY = (start.y + end.y) / 2;
 
                     const d = distToSegment({ x: midX, y: midY }, fw.start, fw.end);
                     if (d < THRESHOLD) {
@@ -528,33 +580,30 @@ export class AIService {
                 }
 
                 if (!isExterior) {
-                    // Create Internal Wall
-                    const isVirtual = room.open_edges?.includes(
-                        ['top', 'right', 'bottom', 'left'][segments.indexOf(seg)]
-                    ) || false;
-
                     candidates.push({
                         id: uuidv4(),
-                        start: seg.start,
-                        end: seg.end,
-                        thickness: isVirtual ? 0.05 : INTERNAL_THICKNESS,
-                        height: WALL_HEIGHT,
-                        isVirtual
+                        start,
+                        end,
+                        thickness: INTERNAL_THICKNESS,
+                        height: WALL_HEIGHT
                     });
                 }
-            });
+            }
 
-            // Add Label
+            // Add Label at centroid
+            let avgX = 0, avgY = 0;
+            room.corners.forEach(c => { avgX += c.x; avgY += c.y; });
             labels.push({
                 id: uuidv4(),
                 text: room.name,
-                x: rx + rw / 2,
-                y: ry + rh / 2
+                x: tX(avgX / room.corners.length),
+                y: tY(avgY / room.corners.length)
             });
         }); // End rooms forEach
 
         // --- ROBUST DEDUPLICATION & PLANARIZATION PASS (Vertex-First) ---
-        const SNAP_DIST = 0.15; // 15cm snapping radius
+        const SNAP_DIST = 0.30; // Standard snapping radius
+        const FOOTPRINT_SNAP_DIST = 0.60; // More aggressive snapping for room corners near footprint
 
         // 1. Collect all "Vertex Seeds" (Endpoints + Intersections)
         const seeds: { x: number; y: number }[] = [];
@@ -585,14 +634,25 @@ export class AIService {
         // 2. Consolidate into Master Vertices (Clustering)
         const masterVertices: { x: number; y: number }[] = [];
         for (const seed of seeds) {
+            // Agressive footprint snapping for seeds
+            let snapped = { x: seed.x, y: seed.y };
+            for (const fw of footprintWalls) {
+                const proj = projectPointOnSegment(seed, fw.start, fw.end);
+                if (distance(seed, proj.point) < FOOTPRINT_SNAP_DIST) {
+                    snapped.x = proj.point.x;
+                    snapped.y = proj.point.y;
+                    break;
+                }
+            }
+
             let found = false;
             for (const mv of masterVertices) {
-                if (distance(seed, mv) < SNAP_DIST) {
+                if (distance(snapped, mv) < SNAP_DIST) {
                     found = true;
                     break;
                 }
             }
-            if (!found) masterVertices.push(seed);
+            if (!found) masterVertices.push(snapped);
         }
 
         // 3. Reconstruct Walls
@@ -674,7 +734,12 @@ export class AIService {
                         let nearestRoom: any = null;
                         let minDist = Infinity;
                         (data.rooms || []).forEach(r => {
-                            const d = Math.sqrt(Math.pow(op.x - r.center_x, 2) + Math.pow(op.y - r.center_y, 2));
+                            if (!r.corners || r.corners.length === 0) return;
+                            let avgX = 0, avgY = 0;
+                            r.corners.forEach(c => { avgX += c.x; avgY += c.y; });
+                            const cx = avgX / r.corners.length;
+                            const cy = avgY / r.corners.length;
+                            const d = Math.sqrt(Math.pow(op.x - cx, 2) + Math.pow(op.y - cy, 2));
                             if (d < minDist) { minDist = d; nearestRoom = r; }
                         });
 
@@ -762,8 +827,13 @@ export class AIService {
                 }, { l: labels[0], d: Infinity });
 
                 if (nearestRoom.l) {
-                    const toCenter = { x: nearestRoom.l.x - fx, y: nearestRoom.l.y - fy };
-                    fRot = (Math.atan2(toCenter.y, toCenter.x) * 180 / Math.PI) - 90;
+                    const room = data.rooms.find(r => r.name === nearestRoom.l.text);
+                    if (room) {
+                        let avgX = 0, avgY = 0;
+                        room.corners.forEach(c => { avgX += c.x; avgY += c.y; });
+                        const toCenter = { x: tX(avgX / room.corners.length) - fx, y: tY(avgY / room.corners.length) - fy };
+                        fRot = (Math.atan2(toCenter.y, toCenter.x) * 180 / Math.PI) - 90;
+                    }
                 }
             }
 
@@ -939,8 +1009,8 @@ export class AIService {
         extendBelts(kitchenBelts);
 
         const debugDims = {
-            width: tX(maxX) - tX(minX),
-            depth: tY(maxY) - tY(minY)
+            width: (landW > 0 && landD > 0) ? landW : tX(maxX) - tX(minX),
+            depth: (landW > 0 && landD > 0) ? landD : tY(maxY) - tY(minY)
         };
 
         return { walls: finalWalls, objects: finalObjects, furniture: finalFurniture, labels, debugDims };
