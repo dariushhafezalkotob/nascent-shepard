@@ -36,29 +36,29 @@ const SofaModel: React.FC<{ width: number; depth: number; label?: string }> = ({
     return (
         <group>
             {/* Thick Frame Arms */}
-            <mesh position={[-width / 2 + armWidth / 2, armHeight / 2, 0]}>
+            <mesh position={[-width / 2 + armWidth / 2, armHeight / 2, 0]} castShadow receiveShadow>
                 <boxGeometry args={[armWidth, armHeight, depth]} />
                 <meshStandardMaterial color={fabricColor} roughness={0.8} />
             </mesh>
-            <mesh position={[width / 2 - armWidth / 2, armHeight / 2, 0]}>
+            <mesh position={[width / 2 - armWidth / 2, armHeight / 2, 0]} castShadow receiveShadow>
                 <boxGeometry args={[armWidth, armHeight, depth]} />
                 <meshStandardMaterial color={fabricColor} roughness={0.8} />
             </mesh>
 
             {/* Base / Lower Frame */}
-            <mesh position={[0, 0.2, 0]}>
+            <mesh position={[0, 0.2, 0]} castShadow receiveShadow>
                 <boxGeometry args={[width - 2 * armWidth + 0.02, 0.4, depth - 0.05]} />
                 <meshStandardMaterial color={fabricColor} roughness={0.8} />
             </mesh>
 
             {/* Seat Cushion */}
-            <mesh position={[0, seatHeight + 0.1, 0.02]}>
+            <mesh position={[0, seatHeight + 0.1, 0.02]} castShadow receiveShadow>
                 <boxGeometry args={[width - 2 * armWidth - 0.02, 0.2, depth - 0.05]} />
                 <meshStandardMaterial color={fabricColor} roughness={0.8} />
             </mesh>
 
             {/* Backrest Cushion */}
-            <mesh position={[0, armHeight + 0.1, -depth / 2 + 0.1]}>
+            <mesh position={[0, armHeight + 0.1, -depth / 2 + 0.1]} castShadow receiveShadow>
                 <boxGeometry args={[width - 2 * armWidth - 0.05, 0.5, 0.2]} />
                 <meshStandardMaterial color={fabricColor} roughness={0.8} />
             </mesh>
@@ -85,17 +85,17 @@ const BedModel: React.FC<{ width: number; depth: number; color: string; label?: 
     return (
         <group>
             {/* Frame */}
-            <mesh position={[0, frameHeight / 2, 0]}>
+            <mesh position={[0, frameHeight / 2, 0]} castShadow receiveShadow>
                 <boxGeometry args={[width, frameHeight, depth]} />
                 <meshStandardMaterial color={color} />
             </mesh>
             {/* Mattress */}
-            <mesh position={[0, frameHeight + mattressHeight / 2, 0]}>
+            <mesh position={[0, frameHeight + mattressHeight / 2, 0]} castShadow receiveShadow>
                 <boxGeometry args={[width * 0.95, mattressHeight, depth * 0.95]} />
                 <meshStandardMaterial color="#f8f9fa" />
             </mesh>
             {/* Headboard */}
-            <mesh position={[0, 0.5, -depth / 2 + 0.05]}>
+            <mesh position={[0, 0.5, -depth / 2 + 0.05]} castShadow receiveShadow>
                 <boxGeometry args={[width, 1, 0.1]} />
                 <meshStandardMaterial color={color} />
             </mesh>
@@ -117,26 +117,26 @@ const ArmchairModel: React.FC<{ width: number; depth: number; label?: string }> 
     return (
         <group>
             {/* Thick Frame Arms */}
-            <mesh position={[-width / 2 + armWidth / 2, armHeight / 2, 0]}>
+            <mesh position={[-width / 2 + armWidth / 2, armHeight / 2, 0]} castShadow receiveShadow>
                 <boxGeometry args={[armWidth, armHeight, depth]} />
                 <meshStandardMaterial color={fabricColor} roughness={0.8} />
             </mesh>
-            <mesh position={[width / 2 - armWidth / 2, armHeight / 2, 0]}>
+            <mesh position={[width / 2 - armWidth / 2, armHeight / 2, 0]} castShadow receiveShadow>
                 <boxGeometry args={[armWidth, armHeight, depth]} />
                 <meshStandardMaterial color={fabricColor} roughness={0.8} />
             </mesh>
             {/* Deep Cushion Base */}
-            <mesh position={[0, 0.2, 0]}>
+            <mesh position={[0, 0.2, 0]} castShadow receiveShadow>
                 <boxGeometry args={[width - 2 * armWidth + 0.02, 0.4, depth - 0.05]} />
                 <meshStandardMaterial color={fabricColor} roughness={0.8} />
             </mesh>
             {/* Seat Cushion */}
-            <mesh position={[0, seatHeight + 0.1, 0.02]}>
+            <mesh position={[0, seatHeight + 0.1, 0.02]} castShadow receiveShadow>
                 <boxGeometry args={[width - 2 * armWidth - 0.02, 0.2, depth - 0.05]} />
                 <meshStandardMaterial color={fabricColor} roughness={0.8} />
             </mesh>
             {/* Backrest Cushion */}
-            <mesh position={[0, armHeight, -depth / 2 + 0.1]}>
+            <mesh position={[0, armHeight, -depth / 2 + 0.1]} castShadow receiveShadow>
                 <boxGeometry args={[width - 2 * armWidth - 0.05, 0.4, 0.2]} />
                 <meshStandardMaterial color={fabricColor} roughness={0.8} />
             </mesh>
@@ -229,7 +229,7 @@ const TableModel: React.FC<{ width: number; depth: number; color: string; height
     return (
         <group>
             {/* Table Top */}
-            <mesh position={[0, finalHeight - topThickness / 2, 0]}>
+            <mesh position={[0, finalHeight - topThickness / 2, 0]} castShadow receiveShadow>
                 <boxGeometry args={[width, topThickness, depth]} />
                 <meshStandardMaterial color={color} />
             </mesh>
@@ -241,7 +241,7 @@ const TableModel: React.FC<{ width: number; depth: number; color: string; height
                 [-width / 2 + legWidth, depth / 2 - legWidth],
                 [width / 2 - legWidth, depth / 2 - legWidth]
             ].map((pos, i) => (
-                <mesh key={i} position={[pos[0], finalHeight / 2, pos[1]]}>
+                <mesh key={i} position={[pos[0], finalHeight / 2, pos[1]]} castShadow receiveShadow>
                     <boxGeometry args={[legWidth, finalHeight, legWidth]} />
                     <meshStandardMaterial color={color} />
                 </mesh>
@@ -251,12 +251,12 @@ const TableModel: React.FC<{ width: number; depth: number; color: string; height
             {isIsland && (
                 <group>
                     {/* Main Cabinet Body */}
-                    <mesh position={[0, (finalHeight - topThickness) / 2, -0.1]}>
+                    <mesh position={[0, (finalHeight - topThickness) / 2, -0.1]} castShadow receiveShadow>
                         <boxGeometry args={[width * 0.96, finalHeight - topThickness, depth * 0.7]} />
                         <meshStandardMaterial color={color} />
                     </mesh>
                     {/* Dark Toe Kick Detail */}
-                    <mesh position={[0, 0.05, -0.1]}>
+                    <mesh position={[0, 0.05, -0.1]} castShadow receiveShadow>
                         <boxGeometry args={[width * 0.94, 0.1, depth * 0.65]} />
                         <meshStandardMaterial color="#212529" roughness={0.8} />
                     </mesh>
@@ -403,11 +403,11 @@ const KitchenModel: React.FC<{ width: number; depth: number; type: string; label
     if (type === 'fridge') {
         return (
             <group>
-                <mesh position={[0, 0.9, 0]}>
+                <mesh position={[0, 0.9, 0]} castShadow receiveShadow>
                     <boxGeometry args={[width, 1.8, depth]} />
                     <meshStandardMaterial color="#ccc" metalness={0.5} roughness={0.3} />
                 </mesh>
-                <mesh position={[width / 2 - 0.05, 1.2, depth / 2 + 0.01]}>
+                <mesh position={[width / 2 - 0.05, 1.2, depth / 2 + 0.01]} castShadow receiveShadow>
                     <boxGeometry args={[0.02, 0.4, 0.02]} />
                     <meshStandardMaterial color="#555" />
                 </mesh>
@@ -423,34 +423,34 @@ const KitchenModel: React.FC<{ width: number; depth: number; type: string; label
         return (
             <group>
                 {/* Body */}
-                <mesh position={[0, toeKickH + (bodyH - countertopT) / 2, 0]}>
+                <mesh position={[0, toeKickH + (bodyH - countertopT) / 2, 0]} castShadow receiveShadow>
                     <boxGeometry args={[width, bodyH - countertopT, depth]} />
                     <meshStandardMaterial color="#f8f9fa" />
                 </mesh>
                 {/* Countertop */}
-                <mesh position={[0, counterH - countertopT / 2, 0.01 / 2]}>
+                <mesh position={[0, counterH - countertopT / 2, 0.01 / 2]} castShadow receiveShadow>
                     <boxGeometry args={[width + 0.005, countertopT, depth + 0.01]} />
                     <meshStandardMaterial color="#495057" />
                 </mesh>
                 {/* Toe Kick */}
-                <mesh position={[0, toeKickH / 2, depth / 2 - 0.05]}>
+                <mesh position={[0, toeKickH / 2, depth / 2 - 0.05]} castShadow receiveShadow>
                     <boxGeometry args={[width, toeKickH, 0.1]} />
                     <meshStandardMaterial color="#adb5bd" />
                 </mesh>
 
                 {isOven ? (
                     <group>
-                        <mesh position={[0, toeKickH + bodyH * 0.45, depth / 2 + 0.01]}>
+                        <mesh position={[0, toeKickH + bodyH * 0.45, depth / 2 + 0.01]} castShadow receiveShadow>
                             <boxGeometry args={[width * 0.9, bodyH * 0.7, 0.02]} />
                             <meshStandardMaterial color="#333" metalness={0.8} />
                         </mesh>
-                        <mesh position={[0, toeKickH + bodyH * 0.7, depth / 2 + 0.05]}>
+                        <mesh position={[0, toeKickH + bodyH * 0.7, depth / 2 + 0.05]} castShadow receiveShadow>
                             <boxGeometry args={[width * 0.5, 0.02, 0.04]} />
                             <meshStandardMaterial color="#ced4da" />
                         </mesh>
                         {/* Burners on top */}
                         {[[-0.15, 0.15], [0.15, 0.15], [-0.15, -0.15], [0.15, -0.15]].map((p, i) => (
-                            <mesh key={i} position={[p[0], counterH, p[1]]}>
+                            <mesh key={i} position={[p[0], counterH, p[1]]} castShadow receiveShadow>
                                 <cylinderGeometry args={[0.08, 0.08, 0.01, 16]} />
                                 <meshStandardMaterial color="#111" />
                             </mesh>
@@ -458,13 +458,13 @@ const KitchenModel: React.FC<{ width: number; depth: number; type: string; label
                     </group>
                 ) : type.includes('drawers') ? (
                     [0.3, 0.55, 0.8].map((y, i) => (
-                        <mesh key={i} position={[0, toeKickH + bodyH * y * 0.75, depth / 2 + 0.01]}>
+                        <mesh key={i} position={[0, toeKickH + bodyH * y * 0.75, depth / 2 + 0.01]} castShadow receiveShadow>
                             <boxGeometry args={[width * 0.8, 0.01, 0.03]} />
                             <meshStandardMaterial color="#ced4da" />
                         </mesh>
                     ))
                 ) : (
-                    <mesh position={[0, toeKickH + bodyH * 0.7, depth / 2 + 0.01]}>
+                    <mesh position={[0, toeKickH + bodyH * 0.7, depth / 2 + 0.01]} castShadow receiveShadow>
                         <boxGeometry args={[width * 0.8, 0.01, 0.03]} />
                         <meshStandardMaterial color="#ced4da" />
                     </mesh>
@@ -488,11 +488,11 @@ const KitchenModel: React.FC<{ width: number; depth: number; type: string; label
                     <meshStandardMaterial color="#495057" />
                 </mesh>
                 {/* Basin */}
-                <mesh position={[0, counterH - 0.05, 0]}>
+                <mesh position={[0, counterH - 0.05, 0]} castShadow receiveShadow>
                     <boxGeometry args={[width * 0.6, 0.15, depth * 0.6]} />
                     <meshStandardMaterial color="#888" metalness={0.9} />
                 </mesh>
-                <mesh position={[0, counterH + 0.1, -depth * 0.3]} rotation={[0, 0, 0]}>
+                <mesh position={[0, counterH + 0.1, -depth * 0.3]} rotation={[0, 0, 0]} castShadow receiveShadow>
                     <cylinderGeometry args={[0.01, 0.01, 0.2]} />
                     <meshStandardMaterial color="#aaa" metalness={1} />
                 </mesh>
@@ -605,6 +605,62 @@ const PlumbingModel: React.FC<{ width: number; depth: number; height: number; ty
     );
 };
 
+const LampModel: React.FC<{ type: 'table' | 'floor'; label?: string; intensity: number }> = ({ type, label, intensity }) => {
+    const isFloor = type === 'floor';
+    const height = isFloor ? 1.4 : 0.45;
+    const baseR = isFloor ? 0.15 : 0.08;
+    const stemR = 0.015;
+    const shadeR = isFloor ? 0.25 : 0.15;
+    const shadeH = isFloor ? 0.35 : 0.2;
+    const lightColor = "#fff9db"; // Warm incandescent glow
+
+    return (
+        <group>
+            {/* Base */}
+            <mesh position={[0, 0.02, 0]} castShadow receiveShadow>
+                <cylinderGeometry args={[baseR, baseR * 1.1, 0.04, 24]} />
+                <meshStandardMaterial color="#333" />
+            </mesh>
+            {/* Stem */}
+            <mesh position={[0, height / 2, 0]} castShadow receiveShadow>
+                <cylinderGeometry args={[stemR, stemR, height, 12]} />
+                <meshStandardMaterial color="#444" metalness={0.8} roughness={0.2} />
+            </mesh>
+            {/* Shade (Glowing) */}
+            <mesh position={[0, height, 0]} castShadow receiveShadow>
+                <cylinderGeometry args={[shadeR * 0.7, shadeR, shadeH, 24, 1, true]} />
+                <meshStandardMaterial
+                    color="#fff"
+                    emissive={lightColor}
+                    emissiveIntensity={intensity * 1.5}
+                    transparent
+                    opacity={0.9}
+                />
+            </mesh>
+            {/* Top Cap */}
+            <mesh position={[0, height + shadeH / 2, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+                <circleGeometry args={[shadeR * 0.7, 24]} />
+                <meshStandardMaterial color="#ddd" />
+            </mesh>
+
+            {/* Actual Light Source */}
+            <pointLight
+                position={[0, height, 0]}
+                intensity={intensity}
+                distance={5}
+                decay={2}
+                color={lightColor}
+                castShadow
+                shadow-bias={-0.001}
+            />
+
+            {label && (
+                <FurnitureLabel text={label} position={[0, 0.1, shadeR + 0.05]} />
+            )}
+        </group>
+    );
+};
+
 const RoofModel: React.FC<{ walls: Wall[]; height: number }> = ({ walls, height }) => {
     // Calculate bounding box of all wall points
     const points = walls.flatMap(w => [w.start, w.end]);
@@ -679,7 +735,6 @@ const DoorModel: React.FC<{ width: number; height: number; thickness: number; hi
 
 const WindowModel: React.FC<{ width: number; height: number; thickness: number }> = ({ width, height, thickness }) => {
     const frameWidth = 0.06;
-    const isBalconyDoor = height > 1.8;
     const vMullionCount = Math.max(1, Math.floor(width / 1.0));
 
     return (
@@ -765,7 +820,7 @@ const WallSection: React.FC<{ start: [number, number]; end: [number, number]; th
     const midY = (start[1] + end[1]) / 2;
 
     return (
-        <mesh position={[midX, offset + height / 2, midY]} rotation={[0, -angle, 0]}>
+        <mesh position={[midX, offset + height / 2, midY]} rotation={[0, -angle, 0]} castShadow receiveShadow>
             <boxGeometry args={[length, height, thickness]} />
             <meshStandardMaterial color={color} transparent={transparent} opacity={opacity} />
         </mesh>
@@ -866,7 +921,7 @@ const SegmentedWall: React.FC<{ wall: Wall; objects: WallObject[] }> = ({ wall, 
     return <group>{wallPieces}</group>;
 };
 
-const FurnitureMesh: React.FC<{ item: Furniture }> = ({ item }) => {
+const FurnitureMesh: React.FC<{ item: Furniture, lightIntensity: number }> = ({ item, lightIntensity }) => {
     const rotationRad = (item.rotation * Math.PI) / 180;
 
     // Map templateIds to components
@@ -892,6 +947,10 @@ const FurnitureMesh: React.FC<{ item: Furniture }> = ({ item }) => {
         if (lowerId.includes('wardrobe') || lowerId.includes('closet')) return <WardrobeModel width={item.width} depth={item.depth} height={2.1} color="#e9ecef" label={item.label} />;
         if (lowerId.includes('tv')) return <TVStandModel width={item.width} depth={item.depth} color="#343a40" label={item.label} />;
         if (item.category === 'bedroom' && lowerId.includes('stand')) return <StorageModel width={item.width} depth={item.depth} height={0.5} color="#dee2e6" label={item.label} />; // Nightstands
+
+        // Lighting
+        if (lowerId.includes('lamp-table')) return <LampModel type="table" label={item.label} intensity={lightIntensity} />;
+        if (lowerId.includes('lamp-floor')) return <LampModel type="floor" label={item.label} intensity={lightIntensity} />;
 
         // Kitchen/Appliances
         if (lowerId.includes('fridge')) return <KitchenModel width={item.width} depth={item.depth} type="fridge" label={item.label} />;
@@ -928,6 +987,8 @@ const FurnitureMesh: React.FC<{ item: Furniture }> = ({ item }) => {
 
 export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furniture, globalWallHeight, onUpdateWallHeight }) => {
     const [showRoof, setShowRoof] = React.useState(false);
+    const [lightIntensity, setLightIntensity] = React.useState(1.0);
+    const [ambientIntensity, setAmbientIntensity] = React.useState(0.1);
 
     return (
         <div className="w-full h-full bg-zinc-950 relative">
@@ -939,6 +1000,46 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furn
                 </div>
 
                 <div className="space-y-4">
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-2">
+                            Lamp Intensity
+                        </label>
+                        <div className="flex items-center gap-3">
+                            <input
+                                type="range"
+                                min="0"
+                                max="4"
+                                step="0.1"
+                                value={lightIntensity}
+                                onChange={(e) => setLightIntensity(Number(e.target.value))}
+                                className="flex-1 accent-orange-500 cursor-pointer h-1.5 bg-zinc-200 rounded-lg appearance-none"
+                            />
+                            <div className="w-12 text-center text-xs font-bold bg-orange-50 text-orange-700 py-1 rounded border border-orange-100">
+                                {lightIntensity.toFixed(1)}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-2">
+                            Ambient Light
+                        </label>
+                        <div className="flex items-center gap-3">
+                            <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.05"
+                                value={ambientIntensity}
+                                onChange={(e) => setAmbientIntensity(Number(e.target.value))}
+                                className="flex-1 accent-blue-500 cursor-pointer h-1.5 bg-zinc-200 rounded-lg appearance-none"
+                            />
+                            <div className="w-12 text-center text-xs font-bold bg-blue-50 text-blue-700 py-1 rounded border border-blue-100">
+                                {ambientIntensity.toFixed(2)}
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="space-y-2">
                         <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-2">
                             <ArrowUpFromLine size={12} /> Wall Height
@@ -1009,7 +1110,7 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furn
                         })}
 
                         {/* Furniture */}
-                        {furniture.map(f => <FurnitureMesh key={f.id} item={f} />)}
+                        {furniture.map(f => <FurnitureMesh key={f.id} item={f} lightIntensity={lightIntensity} />)}
 
                         {/* Roof */}
                         {showRoof && <RoofModel walls={walls} height={globalWallHeight} />}
@@ -1018,8 +1119,8 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furn
                     <ContactShadows position={[0, 0, 0]} opacity={0.4} scale={30} blur={2.5} far={10} />
                 </Suspense>
 
-                <ambientLight intensity={0.6} />
-                <spotLight position={[10, 15, 10]} angle={0.3} penumbra={1} intensity={1} castShadow />
+                <ambientLight intensity={ambientIntensity} />
+                <hemisphereLight intensity={ambientIntensity * 2} color="#ffffff" groundColor="#212529" />
             </Canvas>
         </div>
     );

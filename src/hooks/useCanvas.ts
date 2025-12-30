@@ -605,6 +605,83 @@ export const useCanvas = () => {
         return { x: snappedX, y: snappedY };
     };
 
+    // Helper: Find closest wall to a point
+    const getClosestWall = useCallback((p: Point) => {
+        let bestDist = Infinity;
+        let bestWall: Wall | null = null;
+        let projection: { point: Point; t: number } | null = null;
+        let angle = 0;
+
+        for (const wall of state.walls) {
+            if (wall.isVirtual) continue;
+            const dist = pointToSegmentDistance(p, wall.start, wall.end);
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestWall = wall;
+                const proj = projectPointOnSegment(p, wall.start, wall.end);
+                projection = proj;
+
+                const dx = wall.end.x - wall.start.x;
+                const dy = wall.end.y - wall.start.y;
+                angle = Math.atan2(dy, dx); // Angle of the wall segment
+            }
+        }
+
+        return { wall: bestWall, distance: bestDist, projection, angle };
+    }, [state.walls]);
+
+    // Helper: Align furniture to wall
+    const alignFurnitureToWall = useCallback((item: Furniture, worldPos: Point) => {
+        const lowerId = item.templateId.toLowerCase();
+        const isSofa = lowerId.includes('sofa');
+        const isBed = lowerId.includes('bed');
+
+        // Always update position to follow mouse by default
+        let newItem = { ...item, x: worldPos.x, y: worldPos.y };
+
+        if (!isSofa && !isBed) return newItem;
+
+        const { wall, distance: wallDist } = getClosestWall(worldPos);
+        const threshold = isSofa ? 7.0 : 5.0;
+        if (!wall || wallDist > threshold) return newItem;
+
+
+        // Determine the orientation that faces AWAY from the wall
+        const wallVec = { x: wall.end.x - wall.start.x, y: wall.end.y - wall.start.y };
+        const len = Math.sqrt(wallVec.x ** 2 + wallVec.y ** 2);
+        const nx = -wallVec.y / len;
+        const ny = wallVec.x / len;
+
+        const { point: projPoint } = projectPointOnSegment(worldPos, wall.start, wall.end);
+
+        // Vector from wall projection to furniture center
+        const toCenter = { x: worldPos.x - projPoint.x, y: worldPos.y - projPoint.y };
+        const side = (toCenter.x * nx + toCenter.y * ny) > 0 ? 1 : -1;
+
+        // The vector from wall to furniture center (facing the room)
+        const facingAngle = Math.atan2(ny * side, nx * side) * 180 / Math.PI;
+
+        // Furniture "front" (+Z) faces towards facingAngle.
+        // Screen orientation for rotation R is R+90.
+        // R+90 = facingAngle => R = facingAngle - 90.
+        const targetRotation = (facingAngle - 90);
+
+        newItem.rotation = targetRotation;
+
+        if (isBed && wallDist < 5.0) {
+            // Beds must snap so the back edge touches the wall.
+            const offsetDist = (item.depth / 2) + (wall.thickness / 2);
+            newItem.x = projPoint.x + nx * side * offsetDist;
+            newItem.y = projPoint.y + ny * side * offsetDist;
+        } else {
+            // Sofas just update rotation and keep moving position
+            newItem.x = worldPos.x;
+            newItem.y = worldPos.y;
+        }
+
+        return newItem;
+    }, [getClosestWall]);
+
     // Event Handlers
     const handleMouseDown = useCallback((e: React.MouseEvent) => {
         const canvas = canvasRef.current;
@@ -766,11 +843,14 @@ export const useCanvas = () => {
             setHistory(prev => {
                 const item = prev.furniture.find(f => f.id === movingFurnitureId);
                 if (!item || !dragOffset) return prev;
-                let newX = worldPos.x - dragOffset.x;
-                let newY = worldPos.y - dragOffset.y;
+                let rawX = worldPos.x - dragOffset.x;
+                let rawY = worldPos.y - dragOffset.y;
+
+                const alignedItem = alignFurnitureToWall(item, { x: rawX, y: rawY });
+
                 return {
                     ...prev,
-                    furniture: prev.furniture.map(f => f.id === movingFurnitureId ? { ...f, x: newX, y: newY } : f)
+                    furniture: prev.furniture.map(f => f.id === movingFurnitureId ? { ...f, x: alignedItem.x, y: alignedItem.y, rotation: alignedItem.rotation } : f)
                 };
             }, true);
         }
@@ -910,11 +990,13 @@ export const useCanvas = () => {
                     label: template.label,
                     category: template.category
                 };
+                const alignedItem = alignFurnitureToWall(newItem, worldPos);
+
                 snapshot();
                 setHistory(prev => ({
                     ...prev,
-                    furniture: [...(prev.furniture || []), newItem],
-                    selectedId: newItem.id
+                    furniture: [...(prev.furniture || []), alignedItem],
+                    selectedId: alignedItem.id
                 }), false);
             }
         } else if (type === 'door' || type === 'window' || type === 'opening') {

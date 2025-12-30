@@ -783,45 +783,83 @@ export class AIService {
             const lowerId = f.templateId.toLowerCase();
             const isHeavy = lowerId.includes('bed') || lowerId.includes('wardrobe') || lowerId.includes('tv-stand') || lowerId.includes('fridge') || lowerId.includes('sink') || lowerId.includes('stove') || lowerId.includes('toilet') || lowerId.includes('shower') || lowerId.includes('bathtub') || lowerId.includes('vanity');
 
-            // --- Advanced Wall Docking Engine ---
-            if (isHeavy) {
-                let bestSnapDist = Infinity;
-                let snappedPos = { x: fx, y: fy };
-                let snappedRot = fRot;
+            // --- Advanced Wall Alignment & Docking Engine ---
+            let bestAlignDist = Infinity;
+            let bestWall: Wall | null = null;
+            let bestProj: any = null;
 
-                finalWalls.forEach(wall => {
+            const alignThreshold = isHeavy ? 5.0 : (lowerId.includes('sofa') || lowerId.includes('armchair') ? 7.0 : 0.8);
+
+            if (finalWalls && finalWalls.length > 0) {
+                finalWalls.forEach((wall: Wall) => {
                     if (wall.isVirtual) return;
                     const proj = projectPointOnSegment({ x: fx, y: fy }, wall.start, wall.end);
                     const d = distance({ x: fx, y: fy }, proj.point);
-                    if (d < 1.0 && d < bestSnapDist) {
-                        bestSnapDist = d;
-
-                        const wallVec = { x: wall.end.x - wall.start.x, y: wall.end.y - wall.start.y };
-                        let normal = { x: -wallVec.y, y: wallVec.x };
-                        const len = Math.sqrt(normal.x * normal.x + normal.y * normal.y);
-                        normal = { x: normal.x / len, y: normal.y / len };
-
-                        const toItem = { x: fx - proj.point.x, y: fy - proj.point.y };
-                        if (toItem.x * normal.x + toItem.y * normal.y < 0) {
-                            normal.x = -normal.x; normal.y = -normal.y;
-                        }
-
-                        // Offset center by half wall + half item depth
-                        const offset = (wall.thickness / 2) + (template.depth / 2);
-                        snappedPos = { x: proj.point.x + normal.x * offset, y: proj.point.y + normal.y * offset };
-
-                        // Orientation: FORCE Face-to-Room for these items if docked
-                        const wallAngle = (Math.atan2(normal.y, normal.x) * 180 / Math.PI) - 90;
-                        snappedRot = wallAngle;
+                    if (d < alignThreshold && d < bestAlignDist) {
+                        bestAlignDist = d;
+                        bestWall = wall;
+                        bestProj = proj;
                     }
                 });
-                fx = snappedPos.x;
-                fy = snappedPos.y;
-                fRot = snappedRot;
             }
-            else if (lowerId.includes('sofa') || lowerId.includes('armchair') || lowerId.includes('dining') || lowerId.includes('coffee') || lowerId.includes('table') || lowerId.includes('desk') || lowerId.includes('toilet') || lowerId.includes('shower') || lowerId.includes('bathtub') || lowerId.includes('vanity')) {
-                // Universal Room-Facing Orientation
-                // If the item hasn't been specifically rotated by snapping or other rules
+
+            if (bestWall && bestProj) {
+                const wallObj: Wall = bestWall; // Explicit cast to fix 'never' type errors
+                const wallVec = { x: wallObj.end.x - wallObj.start.x, y: wallObj.end.y - wallObj.start.y };
+                const wallAngleRad = Math.atan2(wallVec.y, wallVec.x);
+                const wallAngleDeg = (wallAngleRad * 180 / Math.PI);
+
+                // Parallel rotations are wallAngleDeg or wallAngleDeg + 180.
+                const opt1 = (wallAngleDeg) % 360;
+                const opt2 = (wallAngleDeg + 180) % 360;
+
+                // Use room center as a guide to pick the better rotation (facing room)
+                let roomX = labels[0]?.x || fx, roomY = labels[0]?.y || fy;
+                if (labels.length > 0) {
+                    const nearestLabel = labels.reduce((best, l) => {
+                        const d = distance({ x: fx, y: fy }, l);
+                        return d < best.d ? { l, d } : best;
+                    }, { l: labels[0], d: Infinity });
+
+                    if (nearestLabel.l) {
+                        const room = data.rooms.find(r => r.name === nearestLabel.l.text);
+                        if (room) {
+                            let avgX = 0, avgY = 0;
+                            room.corners.forEach(c => { avgX += c.x; avgY += c.y; });
+                            roomX = tX(avgX / room.corners.length);
+                            roomY = tY(avgY / room.corners.length);
+                        }
+                    }
+                }
+
+                const toRoom = { x: roomX - fx, y: roomY - fy };
+                const roomAngle = (Math.atan2(toRoom.y, toRoom.x) * 180 / Math.PI);
+
+                // Furniture "front" is at rotation + 90 degrees.
+                const diff1 = Math.abs(((opt1 + 90) - roomAngle + 540) % 360 - 180);
+                const diff2 = Math.abs(((opt2 + 90) - roomAngle + 540) % 360 - 180);
+
+                fRot = diff1 < diff2 ? opt1 : opt2;
+
+                // Snapping for beds and other "Heavy" items (within 5m)
+                if (isHeavy && bestAlignDist < 5.0) {
+                    const len = Math.sqrt(wallVec.x * wallVec.x + wallVec.y * wallVec.y);
+                    let normal = { x: -wallVec.y / len, y: wallVec.x / len };
+
+                    const toItem = { x: fx - bestProj.point.x, y: fy - bestProj.point.y };
+                    const side = (toItem.x * normal.x + toItem.y * normal.y) > 0 ? 1 : -1;
+
+                    const offset = (wallObj.thickness / 2) + (template.depth / 2);
+                    fx = bestProj.point.x + normal.x * side * offset;
+                    fy = bestProj.point.y + normal.y * side * offset;
+
+                    // Force orientation to face away from wall normal
+                    const angleToWallNormal = Math.atan2(normal.y * side, normal.x * side) * 180 / Math.PI;
+                    fRot = (angleToWallNormal - 90);
+                }
+            }
+            else if ((lowerId.includes('dining') || lowerId.includes('coffee') || lowerId.includes('table') || lowerId.includes('desk')) && labels.length > 0) {
+                // Keep center-facing for non-wall-bound items
                 const nearestRoom = labels.reduce((best, l) => {
                     const d = distance({ x: fx, y: fy }, l);
                     return d < best.d ? { l, d } : best;
@@ -858,12 +896,6 @@ export class AIService {
                 const nearestBed = furnitureBuffer.find(b => b.templateId.includes('bed') && distance(item, b) < 2.0);
                 if (nearestBed) {
                     const R_rad = nearestBed.rotation * (Math.PI / 180);
-
-                    // Correct Map-to-3D Orientation Vectors
-                    // Map Y increases Down. 3D Z increases towards Footer.
-                    // R=0 -> Footer Down (Map Y+).
-                    // vWidth (Local X+): Points Right of bed.
-                    // vDepth (Local Z+): Points Down/South.
                     const cosR = Math.cos(R_rad);
                     const sinR = Math.sin(R_rad);
 
@@ -892,117 +924,220 @@ export class AIService {
 
         // 7. PROCESS KITCHEN BELTS (Procedural Cabinetry with Constraints)
         const extendBelts = (belts: { start: { x: number, y: number }, end: { x: number, y: number } }[]) => {
-            const COUNTER_DEPTH = 0.57; // technical dwg depth
-            const UNIT_SIZE = 0.6;
+            const COUNTER_DEPTH = 0.57;
+            const SNAP_THRESHOLD = 5.0;
 
-            for (const belt of belts) {
-                let start = { x: tX(belt.start.x), y: tY(belt.start.y) };
-                let end = { x: tX(belt.end.x), y: tY(belt.end.y) };
+            if (!belts || belts.length === 0) return;
 
-                let bestDockDist = Infinity;
-                let dockWall: Wall | null = null;
-                for (const wall of finalWalls) {
-                    if (wall.isVirtual) continue;
-                    const pS = projectPointOnSegment(start, wall.start, wall.end);
-                    const pE = projectPointOnSegment(end, wall.start, wall.end);
-                    const d = (distance(start, pS.point) + distance(end, pE.point)) / 2;
-                    if (d < 1.0 && d < bestDockDist) {
-                        bestDockDist = d;
-                        dockWall = wall;
+            // --- 7a. Group Belts into Chains (L/U Shapes) ---
+            const processed = new Set<number>();
+            const chains: { start: { x: number, y: number }, end: { x: number, y: number } }[][] = [];
+
+            while (processed.size < belts.length) {
+                const chain: any[] = [];
+                let firstIdx = -1;
+                for (let i = 0; i < belts.length; i++) {
+                    if (!processed.has(i)) { firstIdx = i; break; }
+                }
+                if (firstIdx === -1) break;
+
+                chain.push({ ...belts[firstIdx] });
+                processed.add(firstIdx);
+
+                let changed = true;
+                while (changed) {
+                    changed = false;
+                    for (let i = 0; i < belts.length; i++) {
+                        if (processed.has(i)) continue;
+                        const b = belts[i];
+                        const cStart = chain[0].start;
+                        const cEnd = chain[chain.length - 1].end;
+
+                        const dStartStart = distance({ x: tX(b.start.x), y: tY(b.start.y) }, { x: tX(cStart.x), y: tY(cStart.y) });
+                        const dStartEnd = distance({ x: tX(b.start.x), y: tY(b.start.y) }, { x: tX(cEnd.x), y: tY(cEnd.y) });
+                        const dEndStart = distance({ x: tX(b.end.x), y: tY(b.end.y) }, { x: tX(cStart.x), y: tY(cStart.y) });
+                        const dEndEnd = distance({ x: tX(b.end.x), y: tY(b.end.y) }, { x: tX(cEnd.x), y: tY(cEnd.y) });
+
+                        const TOL = 0.3;
+                        if (dStartEnd < TOL) { chain.push({ ...b }); processed.add(i); changed = true; }
+                        else if (dEndEnd < TOL) { chain.push({ start: b.end, end: b.start }); processed.add(i); changed = true; }
+                        else if (dEndStart < TOL) { chain.unshift({ ...b }); processed.add(i); changed = true; }
+                        else if (dStartStart < TOL) { chain.unshift({ start: b.end, end: b.start }); processed.add(i); changed = true; }
                     }
                 }
+                chains.push(chain);
+            }
 
-                let beltRot = 0;
-                let normal = { x: 0, y: 0 };
-                if (dockWall) {
-                    const snapS = projectPointOnSegment(start, dockWall.start, dockWall.end);
-                    const snapE = projectPointOnSegment(end, dockWall.start, dockWall.end);
-                    const wallVec = { x: dockWall.end.x - dockWall.start.x, y: dockWall.end.y - dockWall.start.y };
-                    normal = { x: -wallVec.y, y: wallVec.x };
-                    const len = Math.sqrt(normal.x * normal.x + normal.y * normal.y);
-                    normal = { x: normal.x / len, y: normal.y / len };
+            // --- 7b. Process each Chain ---
+            for (const chain of chains) {
+                const segments: { start: { x: number, y: number }, end: { x: number, y: number }, rot: number, normal: { x: number, y: number } }[] = [];
 
-                    const toOrig = { x: ((start.x + end.x) / 2) - ((snapS.point.x + snapE.point.x) / 2), y: ((start.y + end.y) / 2) - ((snapS.point.y + snapE.point.y) / 2) };
-                    if (toOrig.x * normal.x + toOrig.y * normal.y < 0) {
-                        normal.x = -normal.x; normal.y = -normal.y;
+                for (const belt of chain) {
+                    let s = { x: tX(belt.start.x), y: tY(belt.start.y) };
+                    let e = { x: tX(belt.end.x), y: tY(belt.end.y) };
+
+                    let bestWall: Wall | null = null;
+                    let bestD = Infinity;
+                    for (const w of finalWalls) {
+                        if (w.isVirtual) continue;
+                        const pS = projectPointOnSegment(s, w.start, w.end);
+                        const pE = projectPointOnSegment(e, w.start, w.end);
+                        const d = (distance(s, pS.point) + distance(e, pE.point)) / 2;
+                        if (d < SNAP_THRESHOLD && d < bestD) { bestD = d; bestWall = w; }
                     }
 
-                    const offset = (dockWall.thickness / 2) + (COUNTER_DEPTH / 2);
-                    start = { x: snapS.point.x + normal.x * offset, y: snapS.point.y + normal.y * offset };
-                    end = { x: snapE.point.x + normal.x * offset, y: snapE.point.y + normal.y * offset };
-                    beltRot = (Math.atan2(normal.y, normal.x) * 180 / Math.PI) - 90;
-                } else {
-                    beltRot = Math.atan2(end.y - start.y, end.x - start.x) * (180 / Math.PI);
-                }
+                    if (bestWall) {
+                        const snapS = projectPointOnSegment(s, bestWall.start, bestWall.end);
+                        const snapE = projectPointOnSegment(e, bestWall.start, bestWall.end);
+                        const wVec = { x: bestWall.end.x - bestWall.start.x, y: bestWall.end.y - bestWall.start.y };
+                        let n = { x: -wVec.y, y: wVec.x };
+                        const L = Math.sqrt(n.x * n.x + n.y * n.y);
+                        n = { x: n.x / L, y: n.y / L };
 
-                const dist = distance(start, end);
-                if (dist < 0.1) continue;
+                        const midDraw = { x: (s.x + e.x) / 2, y: (s.y + e.y) / 2 };
+                        const midSnap = { x: (snapS.point.x + snapE.point.x) / 2, y: (snapS.point.y + snapE.point.y) / 2 };
+                        if ((midDraw.x - midSnap.x) * n.x + (midDraw.y - midSnap.y) * n.y < 0) { n.x = -n.x; n.y = -n.y; }
 
-                // Modules along the belt
-                let currentDist = 0;
-                let step = 0;
+                        const off = (bestWall.thickness / 2) + (COUNTER_DEPTH / 2);
+                        segments.push({
+                            start: { x: snapS.point.x + n.x * off, y: snapS.point.y + n.y * off },
+                            end: { x: snapE.point.x + n.x * off, y: snapE.point.y + n.y * off },
+                            rot: (Math.atan2(n.y, n.x) * 180 / Math.PI) - 90,
+                            normal: n
+                        });
+                    } else {
+                        // Island orientation logic
+                        const beltAngle = Math.atan2(e.y - s.y, e.x - s.x) * (180 / Math.PI);
+                        let islandRot = beltAngle;
 
-                while (currentDist < dist - 0.2) {
-                    const progress = (currentDist + UNIT_SIZE / 2) / dist;
-                    const cx = start.x + (end.x - start.x) * progress;
-                    const cy = start.y + (end.y - start.y) * progress;
+                        // Pick orientation that faces room center
+                        if (labels.length > 0) {
+                            const mid = { x: (s.x + e.x) / 2, y: (s.y + e.y) / 2 };
+                            const nearestLabel = labels.reduce((best, l) => {
+                                const d = distance(mid, l);
+                                return d < best.d ? { l, d } : best;
+                            }, { l: labels[0], d: Infinity });
 
-                    // 1. COLLISION CHECK: Existing Appliances (Sink/Stove/Fridge)
-                    const appliance = finalFurniture.find(ff =>
-                        (ff.templateId.includes('sink') || ff.templateId.includes('stove') || ff.templateId.includes('fridge')) &&
-                        distance({ x: cx, y: cy }, ff) < 0.35
-                    );
+                            const toRoom = { x: nearestLabel.l.x - mid.x, y: nearestLabel.l.y - mid.y };
+                            const roomAngle = Math.atan2(toRoom.y, toRoom.x) * 180 / Math.PI;
 
-                    if (appliance) {
-                        // Skip base cabinet but maybe keep upper
-                        currentDist += UNIT_SIZE;
-                        continue;
-                    }
+                            const diff1 = Math.abs((beltAngle + 90 - roomAngle + 540) % 360 - 180);
+                            const diff2 = Math.abs((beltAngle - 90 - roomAngle + 540) % 360 - 180);
+                            islandRot = (diff1 < diff2) ? beltAngle : (beltAngle + 180);
+                        }
 
-                    // 2. MODULE VARIATION LOGIC (Plan #07)
-                    let moduleTemplate = 'kitchen-counter';
-                    if (step % 4 === 1) moduleTemplate = 'kitchen-drawers-3';
-                    if (step % 6 === 3) moduleTemplate = 'kitchen-drawers-5';
-
-                    finalFurniture.push({
-                        id: uuidv4(),
-                        templateId: moduleTemplate,
-                        x: cx,
-                        y: cy,
-                        width: UNIT_SIZE,
-                        depth: COUNTER_DEPTH,
-                        rotation: beltRot,
-                        label: 'Cabinet',
-                        category: 'kitchen'
-                    });
-
-                    // 3. UPPER CABINET (Standardized)
-                    const overlapsWindow = finalObjects.some(obj => {
-                        if (obj.type !== 'window') return false;
-                        const wall = finalWalls.find(w => w.id === obj.wallId);
-                        if (!wall) return false;
-                        const proj = projectPointOnSegment({ x: cx, y: cy }, wall.start, wall.end);
-                        if (distance({ x: cx, y: cy }, proj.point) > 0.6) return false;
-                        const winWidthT = obj.width / distance(wall.start, wall.end);
-                        return proj.t > (obj.position - winWidthT / 2 - 0.1) && proj.t < (obj.position + winWidthT / 2 + 0.1);
-                    });
-
-                    if (!overlapsWindow) {
-                        finalFurniture.push({
-                            id: uuidv4(),
-                            templateId: 'kitchen-upper',
-                            x: cx,
-                            y: cy,
-                            width: UNIT_SIZE,
-                            depth: 0.35,
-                            rotation: beltRot,
-                            label: 'Upper Cabinet',
-                            category: 'kitchen'
+                        segments.push({
+                            start: s, end: e,
+                            rot: islandRot,
+                            normal: { x: 0, y: 0 }
                         });
                     }
+                }
 
-                    currentDist += UNIT_SIZE;
-                    step++;
+                // --- 7c. Corner Intersection & Filling ---
+                for (let i = 0; i < segments.length; i++) {
+                    const seg = segments[i];
+                    let currentStart = { ...seg.start };
+                    let currentEnd = { ...seg.end };
+
+                    if (i < segments.length - 1) {
+                        const next = segments[i + 1];
+                        const x1 = seg.start.x, y1 = seg.start.y, x2 = seg.end.x, y2 = seg.end.y;
+                        const x3 = next.start.x, y3 = next.start.y, x4 = next.end.x, y4 = next.end.y;
+                        const det = (x2 - x1) * (y4 - y3) - (y2 - y1) * (x4 - x3);
+
+                        if (Math.abs(det) > 0.001) {
+                            const t = ((x3 - x1) * (y4 - y3) - (y3 - y1) * (x4 - x3)) / det;
+                            const intersect = { x: x1 + t * (x2 - x1), y: y1 + t * (y2 - y1) };
+                            currentEnd = { ...intersect };
+                            next.start = { ...intersect };
+
+                            finalFurniture.push({
+                                id: uuidv4(), templateId: 'kitchen-corner-base',
+                                x: intersect.x, y: intersect.y, width: 0.9, depth: 0.9,
+                                rotation: seg.rot, label: 'Corner Cabinet', category: 'kitchen'
+                            });
+                            finalFurniture.push({
+                                id: uuidv4(), templateId: 'kitchen-corner-upper',
+                                x: intersect.x, y: intersect.y, width: 0.6, depth: 0.6,
+                                rotation: seg.rot, label: 'Corner Upper', category: 'kitchen'
+                            });
+                        }
+                    }
+
+                    const beltVec = { x: currentEnd.x - currentStart.x, y: currentEnd.y - currentStart.y };
+                    const dist = Math.sqrt(beltVec.x * beltVec.x + beltVec.y * beltVec.y);
+                    if (dist < 0.1) continue;
+
+                    const CORNER_SLOP = 0.45;
+                    const endLimit = (i < segments.length - 1) ? dist - CORNER_SLOP : dist;
+                    const startLimit = (i > 0) ? CORNER_SLOP : 0;
+
+                    const SIZES = [0.6, 0.45, 0.3];
+                    let cursor = startLimit;
+                    let step = 0;
+
+                    while (cursor < endLimit - 0.05) {
+                        let bestSize = 0;
+                        for (const size of SIZES) {
+                            if (cursor + size > endLimit + 0.05) continue;
+
+                            const cx = currentStart.x + (beltVec.x / dist) * (cursor + size / 2);
+                            const cy = currentStart.y + (beltVec.y / dist) * (cursor + size / 2);
+
+                            const appliance = finalFurniture.find(ff =>
+                                (ff.templateId.includes('sink') || ff.templateId.includes('stove') || ff.templateId.includes('fridge')) &&
+                                distance({ x: cx, y: cy }, ff) < (size / 2 + 0.05)
+                            );
+
+                            if (!appliance) {
+                                bestSize = size;
+                                break;
+                            }
+                        }
+
+                        if (bestSize > 0) {
+                            const cx = currentStart.x + (beltVec.x / dist) * (cursor + bestSize / 2);
+                            const cy = currentStart.y + (beltVec.y / dist) * (cursor + bestSize / 2);
+
+                            let tid = 'kitchen-counter';
+                            if (bestSize === 0.45) tid = 'kitchen-counter-45';
+                            if (bestSize === 0.3) tid = 'kitchen-counter-30';
+                            if (bestSize === 0.6 && step % 5 === 2) tid = 'kitchen-drawers-3';
+
+                            finalFurniture.push({
+                                id: uuidv4(), templateId: tid,
+                                x: cx, y: cy, width: bestSize, depth: COUNTER_DEPTH,
+                                rotation: seg.rot, label: 'Cabinet', category: 'kitchen'
+                            });
+
+                            const overlapsWindow = finalObjects.some(obj => {
+                                if (obj.type !== 'window') return false;
+                                const w = finalWalls.find(wall => wall.id === obj.wallId);
+                                if (!w) return false;
+                                const proj = projectPointOnSegment({ x: cx, y: cy }, w.start, w.end);
+                                if (distance({ x: cx, y: cy }, proj.point) > 0.6) return false;
+                                const winWidthT = obj.width / distance(w.start, w.end);
+                                return proj.t > (obj.position - winWidthT / 2 - 0.1) && proj.t < (obj.position + winWidthT / 2 + 0.1);
+                            });
+
+                            if (!overlapsWindow) {
+                                let utid = 'kitchen-upper';
+                                if (bestSize === 0.45) utid = 'kitchen-upper-45';
+                                if (bestSize === 0.3) utid = 'kitchen-upper-30';
+
+                                finalFurniture.push({
+                                    id: uuidv4(), templateId: utid,
+                                    x: cx, y: cy, width: bestSize, depth: 0.35,
+                                    rotation: seg.rot, label: 'Upper Cabinet', category: 'kitchen'
+                                });
+                            }
+                            cursor += bestSize;
+                            step++;
+                        } else {
+                            cursor += 0.1;
+                        }
+                    }
                 }
             }
         };
