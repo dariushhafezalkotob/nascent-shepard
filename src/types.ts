@@ -3,6 +3,36 @@ export interface Point {
     y: number;
 }
 
+export interface ModelPart {
+    type: 'box' | 'cylinder' | 'sphere';
+    args: number[]; // Dimensions: box [w, h, d], cylinder [top, bot, h], sphere [r]
+    position: [number, number, number];
+    rotation?: [number, number, number]; // [x, y, z] in radians
+    color: string;
+    opacity?: number;
+    metalness?: number;
+    roughness?: number;
+    emissive?: string;
+    emissiveIntensity?: number;
+}
+
+export interface ModelRecipe {
+    parts: ModelPart[];
+    description?: string;
+}
+
+export interface MaterialDefinition {
+    id: string;
+    name: string;
+    category: 'wood' | 'tile' | 'stone' | 'paint' | 'carpet';
+    color: string;
+    roughness?: number;
+    metalness?: number;
+    textureUrl?: string; // Optional for now, using colors mostly
+    realSize?: [number, number]; // [width, height] in meters for pattern repetition
+    repeat?: [number, number];
+}
+
 export interface Wall {
     id: string;
     start: Point;
@@ -10,6 +40,9 @@ export interface Wall {
     thickness: number;
     height: number; // Wall height in mm
     isVirtual?: boolean; // If true, this is a boundary line but not a physical wall
+    materialId?: string;
+    materialSideA?: string;
+    materialSideB?: string;
 }
 
 export interface WallObject {
@@ -36,6 +69,7 @@ export interface Furniture {
     category: 'living' | 'bedroom' | 'kitchen' | 'bathroom';
     flipX?: boolean;
     flipY?: boolean;
+    customRecipe?: ModelRecipe;
 }
 
 export interface RoomLabel {
@@ -55,4 +89,5 @@ export interface EditorState {
     pan: Point;
     zoom: number;
     globalWallHeight?: number; // Global height in meters (2.5 - 3.3)
+    floorMaterials?: Record<string, string>; // roomLabelId -> materialId
 }

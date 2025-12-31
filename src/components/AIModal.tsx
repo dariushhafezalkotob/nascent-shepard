@@ -5,9 +5,11 @@ interface AIModalProps {
     isOpen: boolean;
     onClose: () => void;
     onGenerate: (data: any, apiKey: string) => Promise<void>;
+    apiKey: string;
+    setApiKey: (key: string) => void;
 }
 
-export const AIModal: React.FC<AIModalProps> = ({ isOpen, onClose, onGenerate }) => {
+export const AIModal: React.FC<AIModalProps> = ({ isOpen, onClose, onGenerate, apiKey, setApiKey }) => {
     // Structured Form State
     const [formData, setFormData] = useState({
         type: 'Apartment',
@@ -18,7 +20,6 @@ export const AIModal: React.FC<AIModalProps> = ({ isOpen, onClose, onGenerate })
         priorities: 'Maximum daylight, open kitchen concept'
     });
 
-    const [apiKey, setApiKey] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -123,11 +124,11 @@ export const AIModal: React.FC<AIModalProps> = ({ isOpen, onClose, onGenerate })
                             <div className="flex flex-col gap-1">
                                 <label className="text-xs font-medium text-zinc-500 uppercase">AI Model</label>
                                 <select
-                                    value={(formData as any).model || 'gemini-2.5-flash-image'}
+                                    value={(formData as any).model || 'gemini-3-flash-preview'}
                                     onChange={(e) => handleInputChange('model', e.target.value)}
                                     className="w-full p-2 border border-zinc-200 rounded hover:border-zinc-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-sm text-black bg-white transition-colors"
                                 >
-                                    <option value="gemini-2.5-flash-image">Gemini 2.5 Flash Image (Recommended)</option>
+                                    <option value="gemini-3-flash-preview">Gemini 3 Flash Preview (Recommended)</option>
                                     <option value="gemini-3-pro-image-preview">Gemini 3 Pro Image Preview</option>
                                 </select>
                             </div>

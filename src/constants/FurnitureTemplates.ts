@@ -49,4 +49,5 @@ export const FURNITURE_TEMPLATES: FurnitureTemplate[] = [
     // Lighting
     { id: 'lamp-table', label: 'Table Lamp', category: 'living', width: 0.3, depth: 0.3 },
     { id: 'lamp-floor', label: 'Floor Lamp', category: 'living', width: 0.4, depth: 0.4 },
+    { id: 'sofa-l', label: 'L-Sofa', category: 'living', width: 2.6, depth: 1.6 },
 ];

@@ -1,5 +1,7 @@
+import React from 'react';
 import type { Wall, WallObject, Furniture } from '../types';
-import { Ruler, ArrowUpFromLine, Info, Box, Layers, Settings2, RotateCcw, Type, FlipHorizontal, FlipVertical, RotateCw, Trash2 } from 'lucide-react';
+import { Ruler, ArrowUpFromLine, Info, Box, Layers, Settings2, RotateCcw, Type, FlipHorizontal, FlipVertical, RotateCw, Trash2, Sparkles, Loader2, Image as ImageIcon } from 'lucide-react';
+import { AIService } from '../services/AIService';
 
 interface RightSidebarProps {
     selectedId: string | null;
@@ -13,6 +15,7 @@ interface RightSidebarProps {
     onDelete: () => void;
     globalWallHeight: number;
     updateGlobalWallHeight: (height: number) => void;
+    apiKey: string;
 }
 
 export const RightSidebar: React.FC<RightSidebarProps> = ({
@@ -26,11 +29,49 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     snapshot,
     onDelete,
     globalWallHeight,
-    updateGlobalWallHeight
+    updateGlobalWallHeight,
+    apiKey
 }) => {
     const selectedWall = walls.find((w) => w.id === selectedId);
     const selectedObject = objects.find((o) => o.id === selectedId);
     const selectedFurniture = furniture.find((f) => f.id === selectedId);
+
+    const [modelingId, setModelingId] = React.useState<string | null>(null);
+
+    const handleStyleApply = async (file: File) => {
+        if (!selectedFurniture || !apiKey) return;
+
+        setModelingId(selectedFurniture.id);
+
+        try {
+            // 1. Convert File to Base64
+            const reader = new FileReader();
+            const base64Promise = new Promise<string>((resolve) => {
+                reader.onload = () => {
+                    const base64 = (reader.result as string).split(',')[1];
+                    resolve(base64);
+                };
+            });
+            reader.readAsDataURL(file);
+            const base64 = await base64Promise;
+
+            // 2. Call AI Service
+            const recipe = await AIService.generateCustomModel(
+                base64,
+                selectedFurniture.category,
+                selectedFurniture.label,
+                apiKey
+            );
+
+            // 3. Update Furniture
+            updateFurniture(selectedFurniture.id, { customRecipe: recipe });
+        } catch (e) {
+            console.error("Style Apply Failed:", e);
+            alert("AI Modeling failed. Please check your API key and try again.");
+        } finally {
+            setModelingId(null);
+        }
+    };
 
     if (!selectedId) {
         return (
@@ -232,6 +273,64 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                                     className="w-full px-3 py-2 bg-zinc-100 border border-zinc-200 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                                 />
                             </div>
+                        </div>
+
+                        {/* --- AI STYLING & RECONSTRUCTION --- */}
+                        <div className="space-y-4 pt-4 border-t border-zinc-200">
+                            <h3 className="text-xs font-bold text-zinc-900 uppercase tracking-wide flex items-center gap-2">
+                                <Sparkles size={14} className="text-indigo-500" /> AI Styling & Reconstruction
+                            </h3>
+
+                            <p className="text-[10px] text-zinc-500 leading-relaxed">
+                                Upload an image of this item (e.g., a specific king bed) to generate a unique 3D model using AI.
+                            </p>
+
+                            <div
+                                className={`relative group border-2 border-dashed rounded-xl p-4 transition-all flex flex-col items-center justify-center gap-2 cursor-pointer
+                                    ${modelingId === selectedFurniture.id ? 'bg-zinc-50 border-indigo-200' : 'bg-zinc-50 border-zinc-100 hover:border-indigo-100'}
+                                `}
+                            >
+                                {modelingId === selectedFurniture.id ? (
+                                    <>
+                                        <Loader2 size={24} className="text-indigo-500 animate-spin" />
+                                        <span className="text-xs font-medium text-indigo-600">Reconstructing...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <ImageIcon size={24} className="text-zinc-300 group-hover:text-indigo-300" />
+                                        <span className="text-xs font-medium text-zinc-400 group-hover:text-zinc-600">Choose Architecture Image</span>
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="absolute inset-0 opacity-0 cursor-pointer"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                if (file && apiKey) {
+                                                    handleStyleApply(file);
+                                                } else if (!apiKey) {
+                                                    alert("Please enter an API Key in the AI Studio Modal first!");
+                                                }
+                                            }}
+                                        />
+                                    </>
+                                )}
+                            </div>
+
+                            {selectedFurniture.customRecipe && (
+                                <div className="p-3 bg-green-50 rounded-lg border border-green-100 flex items-start gap-2">
+                                    <Box size={14} className="text-green-600 mt-0.5" />
+                                    <div>
+                                        <p className="text-[10px] font-bold text-green-700 uppercase">Custom 3D Model Active</p>
+                                        <p className="text-[10px] text-green-600 line-clamp-1">{selectedFurniture.customRecipe.description || 'AI Reconstructed primitives'}</p>
+                                        <button
+                                            onClick={() => updateFurniture(selectedFurniture.id, { customRecipe: undefined })}
+                                            className="mt-1 text-[9px] font-bold text-green-700 hover:underline"
+                                        >
+                                            Reset to Default
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div className="space-y-4 pt-4 border-t border-zinc-200">

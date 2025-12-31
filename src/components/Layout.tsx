@@ -10,6 +10,7 @@ import { ObjectPopup } from './ObjectPopup';
 import { useCanvas } from '../hooks/useCanvas';
 import { StorageService } from '../services/StorageService';
 import { SavedPlansModal } from './SavedPlansModal';
+import { MaterialsSidebar } from './MaterialsSidebar';
 
 export const Layout: React.FC = () => {
     const {
@@ -39,6 +40,7 @@ export const Layout: React.FC = () => {
     const [referenceImage, setReferenceImage] = React.useState<string | null>(null);
     const [referenceDims, setReferenceDims] = React.useState<{ width: number, depth: number } | null>(null);
     const [debugJson, setDebugJson] = React.useState<string>("");
+    const [apiKey, setApiKey] = React.useState<string>("");
 
     // 1. Initial Load from Autosave
     useEffect(() => {
@@ -133,6 +135,26 @@ export const Layout: React.FC = () => {
         }), true);
     };
 
+    const handleApplyMaterial = (id: string, materialId: string, type: 'wall' | 'floor', side?: 'A' | 'B') => {
+        if (type === 'wall') {
+            if (side === 'A') {
+                updateWall(id, { materialSideA: materialId });
+            } else if (side === 'B') {
+                updateWall(id, { materialSideB: materialId });
+            } else {
+                updateWall(id, { materialId });
+            }
+        } else {
+            setHistory(prev => ({
+                ...prev,
+                floorMaterials: {
+                    ...(prev.floorMaterials || {}),
+                    [id]: materialId
+                }
+            }), true);
+        }
+    };
+
     const handleNewPlan = () => {
         if (confirm("START NEW DESIGN?\n\nThis will clear the current layout. Make sure you've saved if you want to keep it!")) {
             resetCanvas();
@@ -157,13 +179,16 @@ export const Layout: React.FC = () => {
         <div className="flex h-screen w-screen overflow-hidden bg-white text-black font-sans">
             <div className="flex-1 flex flex-col relative min-w-0 shadow-inner">
                 <div className="flex-1 relative overflow-hidden bg-white">
-                    {activeTab === '3d' ? (
+                    {activeTab === '3d' || activeTab === 'surfaces' ? (
                         <ThreeDViewer
                             walls={state.walls}
                             objects={state.objects}
                             furniture={state.furniture}
                             globalWallHeight={state.globalWallHeight ?? 2.8}
                             onUpdateWallHeight={updateGlobalWallHeight}
+                            onApplyMaterial={handleApplyMaterial}
+                            floorMaterials={state.floorMaterials}
+                            hideSettings={activeTab === 'surfaces'}
                         />
                     ) : (
                         <EditorCanvas
@@ -177,7 +202,7 @@ export const Layout: React.FC = () => {
                         />
                     )}
 
-                    {activeTab !== '3d' && (
+                    {activeTab !== '3d' && activeTab !== 'surfaces' && (
                         <NavigationWidget
                             onZoomIn={zoomIn}
                             onZoomOut={zoomOut}
@@ -185,7 +210,7 @@ export const Layout: React.FC = () => {
                         />
                     )}
 
-                    {referenceImage && (
+                    {referenceImage && activeTab !== 'surfaces' && (
                         <div className="absolute top-4 left-4 z-10 bg-white p-2 rounded shadow-lg border border-zinc-200 w-[30vw] max-w-[400px] min-w-[200px] max-h-[85vh] flex flex-col overflow-hidden">
                             <div className="flex justify-between items-center mb-2 flex-shrink-0">
                                 <h3 className="text-xs font-bold text-zinc-500 uppercase">
@@ -220,9 +245,11 @@ export const Layout: React.FC = () => {
                         />
                     )}
 
-                    <div className="absolute bottom-4 right-4 text-xs text-zinc-400 pointer-events-none select-none bg-white/80 p-2 rounded backdrop-blur-sm border border-zinc-200">
-                        Zoom: {Math.round(state.zoom * 100)}% | Pan: {Math.round(state.pan.x)}, {Math.round(state.pan.y)}
-                    </div>
+                    {activeTab !== 'surfaces' && (
+                        <div className="absolute bottom-4 right-4 text-xs text-zinc-400 pointer-events-none select-none bg-white/80 p-2 rounded backdrop-blur-sm border border-zinc-200">
+                            Zoom: {Math.round(state.zoom * 100)}% | Pan: {Math.round(state.pan.x)}, {Math.round(state.pan.y)}
+                        </div>
+                    )}
                 </div>
 
                 <BottomBar
@@ -242,7 +269,7 @@ export const Layout: React.FC = () => {
                 onLoad={handleLoadPlan}
             />
 
-            <AIModal isOpen={isAIModalOpen} onClose={() => setIsAIModalOpen(false)} onGenerate={handleAIGenerate} />
+            <AIModal isOpen={isAIModalOpen} onClose={() => setIsAIModalOpen(false)} onGenerate={handleAIGenerate} apiKey={apiKey} setApiKey={setApiKey} />
 
             {(activeTab === 'furniture' || activeTab === 'layout') && (
                 <RightSidebar
@@ -257,7 +284,12 @@ export const Layout: React.FC = () => {
                     onDelete={deleteSelection}
                     globalWallHeight={state.globalWallHeight ?? 2.8}
                     updateGlobalWallHeight={updateGlobalWallHeight}
+                    apiKey={apiKey}
                 />
+            )}
+
+            {activeTab === 'surfaces' && (
+                <MaterialsSidebar onClose={() => setActiveTab('layout')} />
             )}
         </div>
     );

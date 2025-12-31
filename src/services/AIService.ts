@@ -1,10 +1,9 @@
 
-import type { Wall, RoomLabel } from '../types';
+import type { Wall, RoomLabel, Furniture, ModelRecipe } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getSegmentIntersection, projectPointOnSegment, distance, pointToSegmentDistance } from '../utils/geometry';
 import { FURNITURE_TEMPLATES } from '../constants/FurnitureTemplates';
-import type { Furniture } from '../types';
 
 // --- PROMPTS ---
 
@@ -100,6 +99,41 @@ RETURN JSON ONLY:
 }
 `;
 
+// 4. VISION MODELING PROMPT (FOR 3D RECONSTRUCTION)
+const MODELING_PROMPT = (category: string, label: string) => `
+ACT AS A 3D GEOMETRY ARCHITECT.
+Task: Analyze the provided image of a ${label} (${category}) and decompose it into a set of 3D primitive shapes (box, cylinder, sphere) for a Three.js scene.
+
+CONSTRAINTS:
+1. USE METERS as units.
+2. CENTER the object around [0, 0, 0] in the X-Z plane. 
+3. The BOTTOM of the object should be at Y=0.
+4. Use a limited set of primitives to keep it simple but recognizable.
+5. Identify colors, metalness, and roughness from the image.
+
+AVAILABLE PRIMITIVES & ARGS:
+- box: [width, height, depth]
+- cylinder: [radiusTop, radiusBottom, height]
+- sphere: [radius]
+
+PART STRUCTURE:
+{
+  "type": "box" | "cylinder" | "sphere",
+  "args": [number, ...],
+  "position": [x, y, z],
+  "rotation": [rx, ry, rz], // in radians
+  "color": "#hexcode",
+  "roughness": 0-1,
+  "metalness": 0-1
+}
+
+RETURN JSON ONLY:
+{
+  "description": "Short description of what was modeled",
+  "parts": [ ... ]
+}
+`;
+
 interface VisionRoom {
     name: string;
     corners: { x: number; y: number }[];
@@ -166,7 +200,7 @@ export class AIService {
         const userPrompt = `A ${bedrooms}-bedroom, ${bathrooms}-bathroom apartment on a ${landWidth}m x ${landDepth}m land. Priorities: ${data.priorities}. Include typical furniture layout if possible.`;
 
         // Extract selected model or default
-        const selectedModel = data.model || 'gemini-2.5-flash-image';
+        const selectedModel = data.model || 'gemini-3-flash-preview';
 
         return this.mockOrRealImplementation(userPrompt, genAI, apiKey, { landWidth, landDepth, targetArea: requiredArea }, selectedModel);
     }
@@ -226,7 +260,7 @@ export class AIService {
     }
 
     // Expose this for testing/debugging (Widget)
-    static async generateImage(userPrompt: string, apiKey: string, modelName: string = 'gemini-2.5-flash-image'): Promise<string> {
+    static async generateImage(userPrompt: string, apiKey: string, modelName: string = 'gemini-3-flash-preview'): Promise<string> {
         if (!apiKey) throw new Error("API Key required");
         const genAI = new GoogleGenerativeAI(apiKey);
 
@@ -316,7 +350,7 @@ export class AIService {
         }
     }
 
-    private static async mockOrRealImplementation(userPrompt: string, genAI: GoogleGenerativeAI, apiKey: string, constraints?: { landWidth: number, landDepth: number, targetArea: number }, modelName: string = 'gemini-2.5-flash-image') {
+    private static async mockOrRealImplementation(userPrompt: string, genAI: GoogleGenerativeAI, apiKey: string, constraints?: { landWidth: number, landDepth: number, targetArea: number }, modelName: string = 'gemini-3-flash-preview') {
 
         // Store constraints temporarily for sub-calls (Hack for static method flow)
         (this as any)._lastConstraints = constraints;
@@ -1150,5 +1184,30 @@ export class AIService {
         };
 
         return { walls: finalWalls, objects: finalObjects, furniture: finalFurniture, labels, debugDims };
+    }
+
+    static async generateCustomModel(imageData: string, category: string, label: string, apiKey: string): Promise<ModelRecipe> {
+        if (!apiKey) throw new Error("API Key required");
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const visionModel = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" }); // Using standard high-speed vision model
+
+        try {
+            const result = await visionModel.generateContent([
+                MODELING_PROMPT(category, label),
+                {
+                    inlineData: {
+                        data: imageData,
+                        mimeType: "image/png"
+                    }
+                }
+            ]);
+
+            const text = result.response.text();
+            const clean = this.extractJSON(text);
+            return JSON.parse(clean) as ModelRecipe;
+        } catch (e: any) {
+            console.error("Custom Modeling Failed:", e);
+            throw new Error(`Custom Modeling Failed: ${e.message}`);
+        }
     }
 }

@@ -1,8 +1,11 @@
 import React, { Suspense } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera, Grid, ContactShadows, Environment, Text } from '@react-three/drei';
+import { Canvas, useThree } from '@react-three/fiber';
+import { OrbitControls, PerspectiveCamera, Grid, ContactShadows, Environment, Text, useTexture } from '@react-three/drei';
+import * as THREE from 'three';
 import { Settings2, ArrowUpFromLine, Home } from 'lucide-react';
-import type { Wall, Furniture, WallObject } from '../types';
+import { detectRooms } from '../utils/roomDetection';
+import type { Wall, Furniture, WallObject, ModelRecipe } from '../types';
+import { SURFACE_MATERIALS } from '../constants/SurfaceMaterials';
 
 const FurnitureLabel: React.FC<{ text: string; position: [number, number, number]; rotation?: [number, number, number]; fontSize?: number }> = ({ text, position, rotation = [0, 0, 0], fontSize = 0.08 }) => (
     <Text
@@ -25,7 +28,43 @@ interface ThreeDViewerProps {
     furniture: Furniture[];
     globalWallHeight: number;
     onUpdateWallHeight: (height: number) => void;
+    onApplyMaterial?: (id: string, materialId: string, type: 'wall' | 'floor', side?: 'A' | 'B') => void;
+    floorMaterials?: Record<string, string>;
+    hideSettings?: boolean;
 }
+
+const DynamicModel: React.FC<{ recipe: ModelRecipe; label?: string }> = ({ recipe, label }) => {
+    return (
+        <group>
+            {recipe.parts.map((part, i) => (
+                <mesh
+                    key={i}
+                    position={part.position}
+                    rotation={part.rotation || [0, 0, 0]}
+                    castShadow
+                    receiveShadow
+                >
+                    {part.type === 'box' && <boxGeometry args={part.args as [number, number, number]} />}
+                    {part.type === 'cylinder' && <cylinderGeometry args={part.args as [number, number, number, number]} />}
+                    {part.type === 'sphere' && <sphereGeometry args={part.args as [number, number, number]} />}
+
+                    <meshStandardMaterial
+                        color={part.color}
+                        opacity={part.opacity ?? 1}
+                        transparent={(part.opacity ?? 1) < 1}
+                        metalness={part.metalness ?? 0}
+                        roughness={part.roughness ?? 0.8}
+                        emissive={part.emissive}
+                        emissiveIntensity={part.emissiveIntensity}
+                    />
+                </mesh>
+            ))}
+            {label && (
+                <FurnitureLabel text={label} position={[0, 1, 0]} />
+            )}
+        </group>
+    );
+};
 
 const SofaModel: React.FC<{ width: number; depth: number; label?: string }> = ({ width, depth, label }) => {
     const seatHeight = 0.35;
@@ -102,6 +141,81 @@ const BedModel: React.FC<{ width: number; depth: number; color: string; label?: 
 
             {label && (
                 <FurnitureLabel text={label} position={[0, frameHeight + 0.05, depth / 2 + 0.005]} />
+            )}
+        </group>
+    );
+};
+
+const LSofaModel: React.FC<{ width: number; depth: number; label?: string }> = ({ label }) => {
+    // Material: Cream/Beige Fabric (matching user's request)
+    const fabricColor = "#f2ebd4";
+    const armHeight = 0.65;
+    const backHeight = 0.85;
+    const totalDepth = 0.9;
+    const chaiseDepth = 1.6;
+
+    return (
+        <group>
+            {/* Feet */}
+            {[[-1.2, 0.4], [1.2, 0.4], [-1.2, -0.4], [1.2, -0.4], [-1.2, 1.4]].map((pos, i) => (
+                <mesh key={i} position={[pos[0], 0.025, pos[1]]}>
+                    <cylinderGeometry args={[0.04, 0.03, 0.05]} />
+                    <meshStandardMaterial color="#111" />
+                </mesh>
+            ))}
+
+            {/* Left Armrest */}
+            <mesh position={[-1.3, (armHeight - 0.05) / 2 + 0.05, 0]} castShadow receiveShadow>
+                <boxGeometry args={[0.2, armHeight - 0.05, totalDepth]} />
+                <meshStandardMaterial color={fabricColor} roughness={0.9} />
+            </mesh>
+
+            {/* Right Armrest */}
+            <mesh position={[1.3, (armHeight - 0.05) / 2 + 0.05, 0]} castShadow receiveShadow>
+                <boxGeometry args={[0.2, armHeight - 0.05, totalDepth]} />
+                <meshStandardMaterial color={fabricColor} roughness={0.9} />
+            </mesh>
+
+            {/* Chaise Seat */}
+            <mesh position={[-0.75, 0.2 + 0.05, 0.35]} castShadow receiveShadow>
+                <boxGeometry args={[0.85, 0.4, chaiseDepth]} />
+                <meshStandardMaterial color={fabricColor} roughness={0.9} />
+            </mesh>
+
+            {/* Main Seat */}
+            <mesh position={[0.5, 0.2 + 0.05, 0]} castShadow receiveShadow>
+                <boxGeometry args={[1.65, 0.4, totalDepth]} />
+                <meshStandardMaterial color={fabricColor} roughness={0.9} />
+            </mesh>
+
+            {/* Backrest Structure */}
+            <mesh position={[0, 0.35 + 0.05, -0.4]} castShadow receiveShadow>
+                <boxGeometry args={[2.6, 0.7, 0.2]} />
+                <meshStandardMaterial color={fabricColor} roughness={0.9} />
+            </mesh>
+
+            {/* Back Cushions */}
+            <group position={[0, 0, 0]}>
+                {[-0.8, 0.05, 0.9].map((x, i) => (
+                    <mesh key={i} position={[x, 0.65, -0.25]} rotation={[-0.1, 0, 0]} castShadow receiveShadow>
+                        <boxGeometry args={[0.8, 0.45, 0.15]} />
+                        <meshStandardMaterial color={fabricColor} roughness={0.9} />
+                    </mesh>
+                ))}
+            </group>
+
+            {/* Pull Tabs */}
+            <mesh position={[-0.75, 0.3, 1.15]} castShadow receiveShadow>
+                <boxGeometry args={[0.12, 0.12, 0.01]} />
+                <meshStandardMaterial color={fabricColor} roughness={0.9} />
+            </mesh>
+            <mesh position={[0.5, 0.3, 0.45]} castShadow receiveShadow>
+                <boxGeometry args={[0.12, 0.12, 0.01]} />
+                <meshStandardMaterial color={fabricColor} roughness={0.9} />
+            </mesh>
+
+            {label && (
+                <FurnitureLabel text={label} position={[0, backHeight + 0.1, 0]} />
             )}
         </group>
     );
@@ -809,7 +923,20 @@ const WallObjectMesh: React.FC<{ obj: WallObject; wall: Wall }> = ({ obj, wall }
 // --- CORE LOGIC ---
 
 // Helper Component to render a piece of wall
-const WallSection: React.FC<{ start: [number, number]; end: [number, number]; thickness: number; height: number; offset?: number; color?: string; transparent?: boolean; opacity?: number }> = ({ start, end, thickness, height, offset = 0, color = "#f1f3f5", transparent = false, opacity = 1 }) => {
+const WallSection: React.FC<{
+    id: string;
+    start: [number, number];
+    end: [number, number];
+    thickness: number;
+    height: number;
+    offset?: number;
+    color?: string;
+    transparent?: boolean;
+    opacity?: number;
+    materialId?: string;
+    materialSideA?: string;
+    materialSideB?: string;
+}> = ({ id, start, end, thickness, height, offset = 0, color = "#f1f3f5", transparent = false, opacity = 1, materialId, materialSideA, materialSideB }) => {
     const dx = end[0] - start[0];
     const dy = end[1] - start[1];
     const length = Math.sqrt(dx * dx + dy * dy);
@@ -819,11 +946,153 @@ const WallSection: React.FC<{ start: [number, number]; end: [number, number]; th
     const midX = (start[0] + end[0]) / 2;
     const midY = (start[1] + end[1]) / 2;
 
+
     return (
-        <mesh position={[midX, offset + height / 2, midY]} rotation={[0, -angle, 0]} castShadow receiveShadow>
+        <mesh
+            position={[midX, offset + height / 2, midY]}
+            rotation={[0, -angle, 0]}
+            castShadow
+            receiveShadow
+            userData={{ type: 'wall', id }}
+        >
             <boxGeometry args={[length, height, thickness]} />
-            <meshStandardMaterial color={color} transparent={transparent} opacity={opacity} />
+            {/* Box UV Mapping: 
+                0: +x (Side End), 1: -x (Side Start)
+                2: +y (Top), 3: -y (Bottom)
+                4: +z (Side A), 5: -z (Side B)
+            */}
+            {[0, 1, 2, 3, 4, 5].map((idx) => {
+                let mId = materialId;
+                let w = length;
+                let h = height;
+
+                if (idx === 0 || idx === 1) { w = thickness; h = height; }
+                if (idx === 2 || idx === 3) { w = length; h = thickness; }
+                if (idx === 4) { mId = materialSideA || materialId; w = length; h = height; }
+                if (idx === 5) { mId = materialSideB || materialId; w = length; h = height; }
+
+                return (
+                    <PhysicsMaterial
+                        key={idx}
+                        index={idx}
+                        matId={mId}
+                        width={w}
+                        height={h}
+                        color={color}
+                        transparent={transparent}
+                        opacity={opacity}
+                    />
+                );
+            })}
         </mesh>
+    );
+};
+
+class MaterialErrorBoundary extends React.Component<{ fallback: React.ReactNode; children: React.ReactNode }, { hasError: boolean }> {
+    constructor(props: any) {
+        super(props);
+        this.state = { hasError: false };
+    }
+    static getDerivedStateFromError() { return { hasError: true }; }
+    render() {
+        if (this.state.hasError) return this.props.fallback;
+        return this.props.children;
+    }
+}
+
+const TextureMaterial: React.FC<{
+    index: number;
+    mat: any;
+    width: number;
+    height: number;
+    color: string;
+    transparent: boolean;
+    opacity: number;
+    side?: THREE.Side;
+    attach?: string;
+}> = ({ index, mat, width, height, color, transparent, opacity, side, attach }) => {
+    const baseTexture = useTexture(mat.textureUrl) as THREE.Texture;
+
+    // Create a unique instance for this surface segment to avoid shared state bugs
+    const texture = React.useMemo(() => {
+        const t = baseTexture.clone();
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        return t;
+    }, [baseTexture]);
+
+    React.useLayoutEffect(() => {
+        if (texture && mat.realSize) {
+            texture.repeat.set(width / mat.realSize[0], height / mat.realSize[1]);
+            texture.needsUpdate = true;
+        }
+    }, [texture, mat.realSize, width, height]);
+
+    // Ensure we dispose of the clone when the segment unmounts
+    React.useEffect(() => {
+        return () => {
+            texture.dispose();
+        };
+    }, [texture]);
+
+    return (
+        <meshStandardMaterial
+            attach={attach || `material-${index}`}
+            color={mat.color || color}
+            map={texture}
+            transparent={transparent}
+            opacity={opacity}
+            roughness={mat.roughness ?? 0.8}
+            metalness={mat.metalness ?? 0}
+            side={side || THREE.FrontSide}
+        />
+    );
+};
+
+const PhysicsMaterial: React.FC<{
+    index: number;
+    matId?: string;
+    width: number;
+    height: number;
+    color: string;
+    transparent: boolean;
+    opacity: number;
+    side?: THREE.Side;
+    attach?: string;
+}> = ({ index, matId, width, height, color, transparent, opacity, side, attach }) => {
+    const mat = SURFACE_MATERIALS.find(m => m.id === matId);
+
+    const fallbackMat = (
+        <meshStandardMaterial
+            attach={attach || `material-${index}`}
+            color={mat?.color || color}
+            transparent={transparent}
+            opacity={opacity}
+            roughness={mat?.roughness ?? 0.8}
+            metalness={mat?.metalness ?? 0}
+            side={side || THREE.FrontSide}
+        />
+    );
+
+    if (!mat?.textureUrl) {
+        return fallbackMat;
+    }
+
+    return (
+        <MaterialErrorBoundary fallback={fallbackMat}>
+            <React.Suspense fallback={fallbackMat}>
+                <TextureMaterial
+                    index={index}
+                    mat={mat}
+                    width={width}
+                    height={height}
+                    color={color}
+                    transparent={transparent}
+                    opacity={opacity}
+                    side={side}
+                    attach={attach}
+                />
+            </React.Suspense>
+        </MaterialErrorBoundary>
     );
 };
 
@@ -860,6 +1129,10 @@ const SegmentedWall: React.FC<{ wall: Wall; objects: WallObject[] }> = ({ wall, 
                     color={wall.isVirtual ? "#4dabf7" : "#f1f3f5"}
                     transparent={wall.isVirtual}
                     opacity={wall.isVirtual ? 0.3 : 1}
+                    materialId={wall.materialId}
+                    materialSideA={wall.materialSideA}
+                    materialSideB={wall.materialSideB}
+                    id={wall.id}
                 />
             );
         }
@@ -882,6 +1155,10 @@ const SegmentedWall: React.FC<{ wall: Wall; objects: WallObject[] }> = ({ wall, 
                     thickness={wall.thickness}
                     height={sillHeight}
                     offset={0}
+                    materialId={wall.materialId}
+                    materialSideA={wall.materialSideA}
+                    materialSideB={wall.materialSideB}
+                    id={wall.id}
                 />
             );
         }
@@ -895,6 +1172,10 @@ const SegmentedWall: React.FC<{ wall: Wall; objects: WallObject[] }> = ({ wall, 
                     thickness={wall.thickness}
                     height={headerHeight}
                     offset={finalObjOffset + finalObjHeight}
+                    materialId={wall.materialId}
+                    materialSideA={wall.materialSideA}
+                    materialSideB={wall.materialSideB}
+                    id={wall.id}
                 />
             );
         }
@@ -914,6 +1195,10 @@ const SegmentedWall: React.FC<{ wall: Wall; objects: WallObject[] }> = ({ wall, 
                 color={wall.isVirtual ? "#4dabf7" : "#f1f3f5"}
                 transparent={wall.isVirtual}
                 opacity={wall.isVirtual ? 0.3 : 1}
+                materialId={wall.materialId}
+                materialSideA={wall.materialSideA}
+                materialSideB={wall.materialSideB}
+                id={wall.id}
             />
         );
     }
@@ -926,10 +1211,13 @@ const FurnitureMesh: React.FC<{ item: Furniture, lightIntensity: number }> = ({ 
 
     // Map templateIds to components
     const renderModel = () => {
+        if (item.customRecipe) return <DynamicModel recipe={item.customRecipe} label={item.label} />;
+
         const lowerId = item.templateId.toLowerCase();
 
         // Seating Hierarchy: Check specific armchairs first, then general sofas, then dining chairs
         if (lowerId.includes('armchair')) return <ArmchairModel width={item.width} depth={item.depth} label={item.label} />;
+        if (lowerId.includes('sofa-l')) return <LSofaModel width={item.width} depth={item.depth} label={item.label} />;
         if (lowerId.includes('sofa')) return <SofaModel width={item.width} depth={item.depth} label={item.label} />;
         if (lowerId.includes('chair')) return <ChairModel />;
 
@@ -985,113 +1273,240 @@ const FurnitureMesh: React.FC<{ item: Furniture, lightIntensity: number }> = ({ 
     );
 };
 
-export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furniture, globalWallHeight, onUpdateWallHeight }) => {
+const MaterialDropHandler: React.FC<{
+    onApplyMaterial?: (id: string, materialId: string, type: 'wall' | 'floor', side?: 'A' | 'B') => void;
+    containerRef: any;
+}> = ({ onApplyMaterial, containerRef }) => {
+    const { camera, raycaster, scene } = useThree();
+
+    React.useEffect(() => {
+        const handleDrop = (e: any) => {
+            const materialId = e.detail.materialId;
+            const dropPos = (window as any).lastDropPos;
+            if (!dropPos || !onApplyMaterial || !containerRef.current) return;
+
+            const rect = containerRef.current.getBoundingClientRect();
+
+            // Convert screen coords to NDC relative to the container
+            const mouse = new THREE.Vector2(
+                ((dropPos.x - rect.left) / rect.width) * 2 - 1,
+                -((dropPos.y - rect.top) / rect.height) * 2 + 1
+            );
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(scene.children, true);
+
+            // Find first hit with userData
+            for (const hit of intersects) {
+                const data = hit.object.userData;
+                if (data && data.type && data.id) {
+                    let side: 'A' | 'B' | undefined;
+                    if (data.type === 'wall' && hit.face) {
+                        // hit.face.normal is in local space for the mesh
+                        const normal = hit.face.normal;
+                        if (normal.z > 0.5) side = 'A';
+                        else if (normal.z < -0.5) side = 'B';
+                    }
+                    onApplyMaterial(data.id, materialId, data.type as 'wall' | 'floor', side);
+                    break;
+                }
+            }
+        };
+
+        window.addEventListener('material-dropped', handleDrop);
+        return () => window.removeEventListener('material-dropped', handleDrop);
+    }, [camera, raycaster, scene, onApplyMaterial, containerRef]);
+
+    return null;
+};
+
+export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furniture, globalWallHeight, onUpdateWallHeight, onApplyMaterial, floorMaterials, hideSettings }) => {
     const [showRoof, setShowRoof] = React.useState(false);
     const [lightIntensity, setLightIntensity] = React.useState(1.0);
     const [ambientIntensity, setAmbientIntensity] = React.useState(0.1);
+    const containerRef = React.useRef<HTMLDivElement>(null);
+
+    const rooms = React.useMemo(() => detectRooms(walls), [walls]);
+
+    // Native drop handling
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        const materialId = (window as any).draggingMaterialId;
+        if (!materialId || !onApplyMaterial || !containerRef.current) return;
+
+        // Note: We'll trigger a custom event or use a ref-based raycaster
+        // to find exactly what we hit.
+        // For simplicity since we are outside R3F context, we dispatch
+        // a signal that the R3F scene will catch.
+        (window as any).lastDropPos = { x: e.clientX, y: e.clientY };
+        window.dispatchEvent(new CustomEvent('material-dropped', {
+            detail: { materialId }
+        }));
+    };
 
     return (
-        <div className="w-full h-full bg-zinc-950 relative">
+        <div
+            ref={containerRef}
+            className="w-full h-full bg-zinc-950 relative"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleDrop}
+        >
             {/* Floating Settings Panel */}
-            <div className="absolute top-4 right-4 z-10 w-64 bg-white/90 backdrop-blur-md rounded-xl shadow-2xl border border-white/20 p-4 text-black animate-in fade-in slide-in-from-top-4 duration-300">
-                <div className="flex items-center gap-2 mb-4 border-b border-zinc-200 pb-2">
-                    <Settings2 size={16} className="text-zinc-500" />
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-600">3D Settings</h3>
+            {!hideSettings && (
+                <div className="absolute top-4 right-4 z-10 w-64 bg-white/90 backdrop-blur-md rounded-xl shadow-2xl border border-white/20 p-4 text-black animate-in fade-in slide-in-from-top-4 duration-300">
+                    <div className="flex items-center gap-2 mb-4 border-b border-zinc-200 pb-2">
+                        <Settings2 size={16} className="text-zinc-500" />
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-600">3D Settings</h3>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-2">
+                                Lamp Intensity
+                            </label>
+                            <div className="flex items-center gap-3">
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="4"
+                                    step="0.1"
+                                    value={lightIntensity}
+                                    onChange={(e) => setLightIntensity(Number(e.target.value))}
+                                    className="flex-1 accent-orange-500 cursor-pointer h-1.5 bg-zinc-200 rounded-lg appearance-none"
+                                />
+                                <div className="w-12 text-center text-xs font-bold bg-orange-50 text-orange-700 py-1 rounded border border-orange-100">
+                                    {lightIntensity.toFixed(1)}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-2">
+                                Ambient Light
+                            </label>
+                            <div className="flex items-center gap-3">
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.05"
+                                    value={ambientIntensity}
+                                    onChange={(e) => setAmbientIntensity(Number(e.target.value))}
+                                    className="flex-1 accent-blue-500 cursor-pointer h-1.5 bg-zinc-200 rounded-lg appearance-none"
+                                />
+                                <div className="w-12 text-center text-xs font-bold bg-blue-50 text-blue-700 py-1 rounded border border-blue-100">
+                                    {ambientIntensity.toFixed(2)}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-2">
+                                <ArrowUpFromLine size={12} /> Wall Height
+                            </label>
+                            <div className="flex items-center gap-3">
+                                <input
+                                    type="range"
+                                    min="2.5"
+                                    max="3.3"
+                                    step="0.1"
+                                    value={globalWallHeight}
+                                    onChange={(e) => onUpdateWallHeight(Number(e.target.value))}
+                                    className="flex-1 accent-indigo-600 cursor-pointer h-1.5 bg-zinc-200 rounded-lg appearance-none"
+                                />
+                                <div className="w-12 text-center text-xs font-bold bg-indigo-50 text-indigo-700 py-1 rounded border border-indigo-100">
+                                    {globalWallHeight.toFixed(1)}m
+                                </div>
+                            </div>
+                            <p className="text-[9px] text-zinc-400 italic">Range: 2.5m - 3.3m</p>
+                        </div>
+
+                        <div className="border-t border-zinc-100 pt-3">
+                            <button
+                                onClick={() => setShowRoof(!showRoof)}
+                                className={`w-full flex items-center justify-between p-2 rounded-lg transition-all duration-200 ${showRoof ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-zinc-50 text-zinc-600 hover:bg-zinc-100'}`}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <Home size={14} />
+                                    <span className="text-xs font-bold uppercase tracking-wide">Show Roof</span>
+                                </div>
+                                <div className={`w-8 h-4 rounded-full relative transition-colors ${showRoof ? 'bg-white/30' : 'bg-zinc-200'}`}>
+                                    <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${showRoof ? 'right-0.5' : 'left-0.5'}`} />
+                                </div>
+                            </button>
+                        </div>
+                    </div>
                 </div>
-
-                <div className="space-y-4">
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-2">
-                            Lamp Intensity
-                        </label>
-                        <div className="flex items-center gap-3">
-                            <input
-                                type="range"
-                                min="0"
-                                max="4"
-                                step="0.1"
-                                value={lightIntensity}
-                                onChange={(e) => setLightIntensity(Number(e.target.value))}
-                                className="flex-1 accent-orange-500 cursor-pointer h-1.5 bg-zinc-200 rounded-lg appearance-none"
-                            />
-                            <div className="w-12 text-center text-xs font-bold bg-orange-50 text-orange-700 py-1 rounded border border-orange-100">
-                                {lightIntensity.toFixed(1)}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-2">
-                            Ambient Light
-                        </label>
-                        <div className="flex items-center gap-3">
-                            <input
-                                type="range"
-                                min="0"
-                                max="1"
-                                step="0.05"
-                                value={ambientIntensity}
-                                onChange={(e) => setAmbientIntensity(Number(e.target.value))}
-                                className="flex-1 accent-blue-500 cursor-pointer h-1.5 bg-zinc-200 rounded-lg appearance-none"
-                            />
-                            <div className="w-12 text-center text-xs font-bold bg-blue-50 text-blue-700 py-1 rounded border border-blue-100">
-                                {ambientIntensity.toFixed(2)}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-2">
-                            <ArrowUpFromLine size={12} /> Wall Height
-                        </label>
-                        <div className="flex items-center gap-3">
-                            <input
-                                type="range"
-                                min="2.5"
-                                max="3.3"
-                                step="0.1"
-                                value={globalWallHeight}
-                                onChange={(e) => onUpdateWallHeight(Number(e.target.value))}
-                                className="flex-1 accent-indigo-600 cursor-pointer h-1.5 bg-zinc-200 rounded-lg appearance-none"
-                            />
-                            <div className="w-12 text-center text-xs font-bold bg-indigo-50 text-indigo-700 py-1 rounded border border-indigo-100">
-                                {globalWallHeight.toFixed(1)}m
-                            </div>
-                        </div>
-                        <p className="text-[9px] text-zinc-400 italic">Range: 2.5m - 3.3m</p>
-                    </div>
-
-                    <div className="border-t border-zinc-100 pt-3">
-                        <button
-                            onClick={() => setShowRoof(!showRoof)}
-                            className={`w-full flex items-center justify-between p-2 rounded-lg transition-all duration-200 ${showRoof ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-zinc-50 text-zinc-600 hover:bg-zinc-100'}`}
-                        >
-                            <div className="flex items-center gap-2">
-                                <Home size={14} />
-                                <span className="text-xs font-bold uppercase tracking-wide">Show Roof</span>
-                            </div>
-                            <div className={`w-8 h-4 rounded-full relative transition-colors ${showRoof ? 'bg-white/30' : 'bg-zinc-200'}`}>
-                                <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${showRoof ? 'right-0.5' : 'left-0.5'}`} />
-                            </div>
-                        </button>
-                    </div>
-                </div>
-            </div>
+            )}
 
             <Canvas shadows gl={{ antialias: true }}>
                 <PerspectiveCamera makeDefault position={[12, 12, 12]} fov={40} />
+                <MaterialDropHandler onApplyMaterial={onApplyMaterial} containerRef={containerRef} />
                 <OrbitControls makeDefault minPolarAngle={0} maxPolarAngle={Math.PI / 2.1} />
 
                 <Suspense fallback={null}>
                     <Environment preset="city" />
 
                     <group>
-                        {/* Floor */}
-                        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
+                        {/* General Base Floor (Lowered to avoid overlap) */}
+                        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]} receiveShadow>
                             <planeGeometry args={[100, 100]} />
-                            <meshStandardMaterial color="#f1f3f5" />
+                            <meshStandardMaterial color="#f8f9fa" />
                         </mesh>
-                        <Grid args={[100, 100]} sectionColor="#adb5bd" cellColor="#dee2e6" infiniteGrid />
+                        <Grid
+                            args={[100, 100]}
+                            sectionColor="#adb5bd"
+                            cellColor="#dee2e6"
+                            infiniteGrid
+                            position={[0, -0.01, 0]} // Fixed grid height 1cm below room floors
+                        />
+
+                        {/* Room Floors */}
+                        {rooms.map((room) => {
+                            const shape = new THREE.Shape();
+                            room.path.forEach((p, i) => {
+                                // 2D (x,y) -> 3D (x,0,y). Since rotation is -PI/2 on X:
+                                // local (x, y) -> world (x, 0, -y).
+                                // To get world (x, 0, y), we use local (x, -y).
+                                if (i === 0) shape.moveTo(p.x, -p.y);
+                                else shape.lineTo(p.x, -p.y);
+                            });
+                            shape.closePath();
+
+                            // Find material using stable Room ID
+                            const floorMatId = floorMaterials?.[room.id];
+
+                            // Calculate bounding box for texture scaling
+                            const minX = Math.min(...room.path.map(p => p.x));
+                            const maxX = Math.max(...room.path.map(p => p.x));
+                            const minY = Math.min(...room.path.map(p => p.y));
+                            const maxY = Math.max(...room.path.map(p => p.y));
+                            const roomWidth = maxX - minX;
+                            const roomHeight = maxY - minY;
+
+                            return (
+                                <mesh
+                                    key={room.id}
+                                    rotation={[-Math.PI / 2, 0, 0]}
+                                    position={[0, 0.005, 0]} // Baseline 
+                                    receiveShadow
+                                    userData={{ type: 'floor', id: room.id }}
+                                >
+                                    <extrudeGeometry args={[shape, { depth: 0.01, bevelEnabled: false }]} />
+                                    <PhysicsMaterial
+                                        index={0}
+                                        matId={floorMatId}
+                                        width={1} // Absolute scaling for world-unit UVs
+                                        height={1}
+                                        color="#f3f4f6"
+                                        transparent={false}
+                                        opacity={1}
+                                        side={THREE.DoubleSide}
+                                        attach="material"
+                                    />
+                                </mesh>
+                            );
+                        })}
 
                         {/* Walls (Physical only, segmented for holes) */}
                         {walls.filter(w => !w.isVirtual).map(wall => (

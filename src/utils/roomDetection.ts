@@ -2,6 +2,7 @@ import type { Wall, Point } from '../types';
 import { distance, pointToSegmentDistance, projectPointOnSegment } from './geometry';
 
 export interface Room {
+    id: string;
     path: Point[];
     area: number;
     centroid: Point;
@@ -173,11 +174,16 @@ export const detectRooms = (walls: Wall[]): Room[] => {
             }
             area /= 2;
 
-            if (area > 1.0) { // Positive Area check (CW in Y-down is positive)
+            if (area > 0.1) { // Positive Area check (CW in Y-down is an internal room)
                 cx /= (6 * area);
                 cy /= (6 * area);
 
+                // Create a stable ID by sorting points and hashing them
+                const sortedPoints = [...polygon].sort((a, b) => (a.x - b.x) || (a.y - b.y));
+                const roomId = `room-${sortedPoints.map(p => `${Math.round(p.x * 100)},${Math.round(p.y * 100)}`).join('-')}`;
+
                 rooms.push({
+                    id: roomId,
                     path: polygon,
                     area: Math.abs(area),
                     centroid: { x: cx, y: cy }

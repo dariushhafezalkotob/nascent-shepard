@@ -26,6 +26,7 @@ export const useCanvas = () => {
         labels: RoomLabel[];
         selectedId: string | null;
         globalWallHeight: number;
+        floorMaterials: Record<string, string>;
     }>({
         walls: [],
         objects: [],
@@ -33,6 +34,7 @@ export const useCanvas = () => {
         labels: [],
         selectedId: null,
         globalWallHeight: 2.8,
+        floorMaterials: {},
     });
 
     // View State (Not undoable)
@@ -1063,6 +1065,7 @@ export const useCanvas = () => {
             labels: [],
             selectedId: null,
             globalWallHeight: 2.8,
+            floorMaterials: {},
         });
         setViewState({
             mode: 'select',
