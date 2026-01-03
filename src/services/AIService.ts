@@ -7,10 +7,35 @@ import { FURNITURE_TEMPLATES } from '../constants/FurnitureTemplates';
 
 // --- PROMPTS ---
 
+// 1. PROJECT TYPE SPECIFIC RULES
+const PROJECT_TYPE_RULES: Record<string, string> = {
+    'Villa': `
+        - ZONING: Clear separation between private (bedrooms) and public (living/dining) zones.
+        - MASTER SUITE: Include a large master suite with walk-in closet and ensuite bathroom.
+        - LUXURY: Prioritize large windows and open-plan transition to outdoor spaces.
+    `,
+    'Apartment': `
+        - EFFICIENCY: Maximize usable area, minimize long corridors.
+        - COMPACTNESS: Efficient L-shaped or Galley kitchen layouts.
+        - BALCONY: Include at least one balcony area accessible from the living room.
+    `,
+    'House': `
+        - TRADITIONAL: Standard residential layout with separate entry foyer if space allows.
+        - UTILITY: Include a dedicated laundry or utility room.
+    `,
+    'Multiple Floors': `
+        - VERTICAL CIRCULATION: Must include a STAIRCASE and ELEVATOR shaft.
+        - CORE ALIGNMENT: The stairs and elevator must be grouped into a central vertical core. 
+        - SHARED POSITIONING: Design the layout assuming these circulation elements remain in the EXACT same (x,y) coordinates for all floors.
+    `
+};
+
 // 1. IMAGE GENERATION PROMPT
-const IMAGE_GEN_PROMPT_TEMPLATE = (userPrompt: string, constraints?: { landWidth: number, landDepth: number }, aspectRatio?: string) => `
+const IMAGE_GEN_PROMPT_TEMPLATE = (userPrompt: string, constraints?: { landWidth: number, landDepth: number }, aspectRatio?: string, projectType: string = 'Apartment') => `
 IMAGE_GENERATION_TASK: Generate a technical 2D floor plan.
 OBJECTIVE: Technical drawing of ${userPrompt}.
+PROJECT_TYPE: ${projectType}
+${PROJECT_TYPE_RULES[projectType] || ''}
 ${constraints ? `SITE_CONSTRAINTS: ${constraints.landWidth}m x ${constraints.landDepth}m rectangular site.` : ''}
 ${aspectRatio ? `ASPECT_RATIO: ${aspectRatio}.` : ''}
 TECHNICAL_SPECIFICATIONS:
@@ -197,12 +222,14 @@ export class AIService {
         console.log(`Feasibility check passed. Required: ~${requiredArea.toFixed(1)}m², Available: ${landArea}m²`);
 
         // 2. PROGRAM GENERATION (Internal Reasoning for prompt)
-        const userPrompt = `A ${bedrooms}-bedroom, ${bathrooms}-bathroom apartment on a ${landWidth}m x ${landDepth}m land. Priorities: ${data.priorities}. Include typical furniture layout if possible.`;
+        const projectType = data.projectType || 'Apartment';
+        const styleDirection = data.styleDirection || 'Modern';
+        const userPrompt = `A ${bedrooms}-bedroom, ${bathrooms}-bathroom ${projectType} on a ${landWidth}m x ${landDepth}m land. Project Type: ${projectType}. Architectural Style: ${styleDirection}. Priorities: ${data.priorities}. Include typical furniture layout if possible.`;
 
         // Extract selected model or default
         const selectedModel = data.model || 'gemini-3-flash-preview';
 
-        return this.mockOrRealImplementation(userPrompt, genAI, apiKey, { landWidth, landDepth, targetArea: requiredArea }, selectedModel);
+        return this.mockOrRealImplementation(userPrompt, genAI, apiKey, { landWidth, landDepth, targetArea: requiredArea, projectType }, selectedModel);
     }
 
     private static async retryWithBackoff<T>(
@@ -260,7 +287,7 @@ export class AIService {
     }
 
     // Expose this for testing/debugging (Widget)
-    static async generateImage(userPrompt: string, apiKey: string, modelName: string = 'gemini-3-flash-preview'): Promise<string> {
+    static async generateImage(userPrompt: string, apiKey: string, modelName: string = 'gemini-3-flash-preview', projectType: string = 'Apartment'): Promise<string> {
         if (!apiKey) throw new Error("API Key required");
         const genAI = new GoogleGenerativeAI(apiKey);
 
@@ -302,12 +329,12 @@ export class AIService {
                         }
                     }
                 });
-                finalPrompt = IMAGE_GEN_PROMPT_TEMPLATE(userPrompt, constraints);
+                finalPrompt = IMAGE_GEN_PROMPT_TEMPLATE(userPrompt, constraints, undefined, projectType);
             } else {
                 // PROMPT-BASED (Fallback for v2.0 or others)
                 console.log("Using prompt-based aspect ratio enforcement.");
                 imgModel = genAI.getGenerativeModel({ model: modelName });
-                finalPrompt = IMAGE_GEN_PROMPT_TEMPLATE(userPrompt, constraints, aspectRatio);
+                finalPrompt = IMAGE_GEN_PROMPT_TEMPLATE(userPrompt, constraints, aspectRatio, projectType);
             }
 
             const result = await this.retryWithBackoff(async () => {
@@ -350,14 +377,14 @@ export class AIService {
         }
     }
 
-    private static async mockOrRealImplementation(userPrompt: string, genAI: GoogleGenerativeAI, apiKey: string, constraints?: { landWidth: number, landDepth: number, targetArea: number }, modelName: string = 'gemini-3-flash-preview') {
+    private static async mockOrRealImplementation(userPrompt: string, genAI: GoogleGenerativeAI, apiKey: string, constraints?: { landWidth: number, landDepth: number, targetArea: number, projectType?: string }, modelName: string = 'gemini-3-flash-preview') {
 
         // Store constraints temporarily for sub-calls (Hack for static method flow)
         (this as any)._lastConstraints = constraints;
 
         // --- STEP 1: IMAGE GENERATION ---
         console.log("Step 1: Dreaming Floor Plan...");
-        const base64Image = await this.generateImage(userPrompt, apiKey, modelName);
+        const base64Image = await this.generateImage(userPrompt, apiKey, modelName, constraints?.projectType);
 
         // --- STEP 2: VISION ANALYSIS ---
         console.log("Step 2: Vision Analysis...");

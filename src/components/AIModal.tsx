@@ -12,7 +12,8 @@ interface AIModalProps {
 export const AIModal: React.FC<AIModalProps> = ({ isOpen, onClose, onGenerate, apiKey, setApiKey }) => {
     // Structured Form State
     const [formData, setFormData] = useState({
-        type: 'Apartment',
+        projectType: 'Apartment',
+        styleDirection: 'Modern',
         landWidth: '15',
         landDepth: '20',
         bedrooms: '2',
@@ -94,6 +95,18 @@ export const AIModal: React.FC<AIModalProps> = ({ isOpen, onClose, onGenerate, a
                         <InputField label="Land Width (m)" field="landWidth" placeholder="15" type="number" />
                         <InputField label="Land Depth (m)" field="landDepth" placeholder="20" type="number" />
 
+                        {/* Section 1.5: Project Type */}
+                        <div className="col-span-full border-b border-zinc-100 pb-2 mb-2 mt-4">
+                            <h3 className="text-sm font-semibold text-zinc-900">1.5 Project Type</h3>
+                        </div>
+                        <div className="col-span-full">
+                            <SelectField
+                                label="Project Type"
+                                field="projectType"
+                                options={['Villa', 'Apartment', 'House', 'Multiple Floors']}
+                            />
+                        </div>
+
                         {/* Section 2: Apartment Requirements */}
                         <div className="col-span-full border-b border-zinc-100 pb-2 mb-2 mt-4">
                             <h3 className="text-sm font-semibold text-zinc-900">2. Apartment Program</h3>
@@ -101,6 +114,18 @@ export const AIModal: React.FC<AIModalProps> = ({ isOpen, onClose, onGenerate, a
 
                         <SelectField label="Bedroom Count" field="bedrooms" options={['1', '2', '3', '4', '5']} />
                         <SelectField label="Bathroom Count" field="bathrooms" options={['1', '2', '3']} />
+
+                        {/* Section 2.5: Design Style */}
+                        <div className="col-span-full border-b border-zinc-100 pb-2 mb-2 mt-4">
+                            <h3 className="text-sm font-semibold text-zinc-900">2.5 Design Style</h3>
+                        </div>
+                        <div className="col-span-full">
+                            <SelectField
+                                label="Architectural Style"
+                                field="styleDirection"
+                                options={['Modern', 'Minimalist', 'Traditional', 'Industrial', 'Scandinavian']}
+                            />
+                        </div>
 
                         {/* Section 3: Additional Notes */}
                         <div className="col-span-full border-b border-zinc-100 pb-2 mb-2 mt-4">

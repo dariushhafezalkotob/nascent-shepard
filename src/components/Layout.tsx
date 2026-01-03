@@ -11,6 +11,10 @@ import { useCanvas } from '../hooks/useCanvas';
 import { StorageService } from '../services/StorageService';
 import { SavedPlansModal } from './SavedPlansModal';
 import { MaterialsSidebar } from './MaterialsSidebar';
+import { DecorationSetupModal } from './DecorationSetupModal';
+import { ProductPickerPopup } from './ProductPickerPopup';
+import { distributeBudget } from '../utils/budgetDistribution';
+import type { Choice } from '../types';
 
 export const Layout: React.FC = () => {
     const {
@@ -37,6 +41,7 @@ export const Layout: React.FC = () => {
     const [activeTab, setActiveTab] = React.useState<'layout' | 'furniture' | 'surfaces' | '3d'>('layout');
     const [isAIModalOpen, setIsAIModalOpen] = React.useState(false);
     const [isSaveModalOpen, setIsSaveModalOpen] = React.useState(false);
+    const [isDecorationModalOpen, setIsDecorationModalOpen] = React.useState(false);
     const [referenceImage, setReferenceImage] = React.useState<string | null>(null);
     const [referenceDims, setReferenceDims] = React.useState<{ width: number, depth: number } | null>(null);
     const [debugJson, setDebugJson] = React.useState<string>("");
@@ -60,6 +65,17 @@ export const Layout: React.FC = () => {
         StorageService.autosave(state);
     }, [state]);
 
+    // 3. Auto-redistribute budget when furniture changes
+    useEffect(() => {
+        if (state.decorationBudget && state.decorationBudget > 0) {
+            const newItemBudgetMap = distributeBudget(state.furniture, state.decorationBudget);
+            // Check if map actually changed to avoid infinite loops
+            if (JSON.stringify(newItemBudgetMap) !== JSON.stringify(state.itemBudgetMap)) {
+                setHistory(prev => ({ ...prev, itemBudgetMap: newItemBudgetMap }), true);
+            }
+        }
+    }, [state.furniture, state.decorationBudget, state.itemBudgetMap, setHistory]);
+
     const handleAIGenerate = async (data: any, apiKey: string) => {
         try {
             const { walls: newWalls, objects: newObjects, furniture: newFurniture, labels: newLabels, generatedImage, rawResponse, dimensions } = await AIService.generateLayout(data, apiKey);
@@ -80,11 +96,37 @@ export const Layout: React.FC = () => {
                 furniture: [...(prev.furniture || []), ...newFurniture],
                 labels: [...(prev.labels || []), ...newLabels]
             }), false);
+
+            // Open decoration setup after generation
+            setTimeout(() => setIsDecorationModalOpen(true), 1500);
         } catch (e) {
             console.error(e);
             throw e;
         }
     };
+
+    const handleDecorationConfirm = (style: string, budget: number) => {
+        const itemBudgetMap = distributeBudget(state.furniture, budget);
+        setHistory(prev => ({
+            ...prev,
+            decorationStyle: style,
+            decorationBudget: budget,
+            itemBudgetMap
+        }), true);
+        setIsDecorationModalOpen(false);
+    };
+
+    const handleProductSelect = (furnitureId: string, choice: Choice) => {
+        setHistory(prev => ({
+            ...prev,
+            furniture: prev.furniture.map(f => f.id === furnitureId ? { ...f, selectedChoice: choice } : f)
+        }), true);
+    };
+
+    const totalSpent = state.furniture.reduce((acc, f) => {
+        const itemPrice = f.selectedChoice?.price ?? state.itemBudgetMap?.[f.id] ?? 0;
+        return acc + itemPrice;
+    }, 0);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -250,6 +292,18 @@ export const Layout: React.FC = () => {
                             Zoom: {Math.round(state.zoom * 100)}% | Pan: {Math.round(state.pan.x)}, {Math.round(state.pan.y)}
                         </div>
                     )}
+
+                    {activeTab === 'furniture' && state.selectedId && state.furniture.find(f => f.id === state.selectedId) && (
+                        <ProductPickerPopup
+                            item={state.furniture.find(f => f.id === state.selectedId)!}
+                            allocatedBudget={state.itemBudgetMap?.[state.selectedId ?? ''] || 0}
+                            totalBudget={state.decorationBudget || 0}
+                            totalSpent={totalSpent}
+                            style={state.decorationStyle || 'Modern'}
+                            onSelect={(choice) => handleProductSelect(state.selectedId!, choice)}
+                            onClose={() => setHistory(prev => ({ ...prev, selectedId: null }), false)}
+                        />
+                    )}
                 </div>
 
                 <BottomBar
@@ -291,6 +345,12 @@ export const Layout: React.FC = () => {
             {activeTab === 'surfaces' && (
                 <MaterialsSidebar onClose={() => setActiveTab('layout')} />
             )}
+
+            <DecorationSetupModal
+                isOpen={isDecorationModalOpen}
+                onClose={() => setIsDecorationModalOpen(false)}
+                onConfirm={handleDecorationConfirm}
+            />
         </div>
     );
 };

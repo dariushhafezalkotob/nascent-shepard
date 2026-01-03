@@ -57,6 +57,13 @@ export interface WallObject {
     openDirection?: 'in' | 'out'; // For doors
 }
 
+export interface Choice {
+    id: string;
+    name: string;
+    price: number;
+    imageUrl?: string;
+}
+
 export interface Furniture {
     id: string;
     templateId: string;
@@ -70,6 +77,8 @@ export interface Furniture {
     flipX?: boolean;
     flipY?: boolean;
     customRecipe?: ModelRecipe;
+    allocatedBudget?: number;
+    selectedChoice?: Choice;
 }
 
 export interface RoomLabel {
@@ -90,4 +99,7 @@ export interface EditorState {
     zoom: number;
     globalWallHeight?: number; // Global height in meters (2.5 - 3.3)
     floorMaterials?: Record<string, string>; // roomLabelId -> materialId
+    decorationStyle?: string;
+    decorationBudget?: number;
+    itemBudgetMap?: Record<string, number>;
 }
