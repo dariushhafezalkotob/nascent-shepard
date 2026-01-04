@@ -682,16 +682,35 @@ export const useCanvas = () => {
 
         for (const wall of state.walls) {
             if (wall.isVirtual) continue;
-            const dist = pointToSegmentDistance(p, wall.start, wall.end);
-            if (dist < bestDist) {
-                bestDist = dist;
-                bestWall = wall;
-                const proj = projectPointOnSegment(p, wall.start, wall.end);
-                projection = proj;
 
-                const dx = wall.end.x - wall.start.x;
-                const dy = wall.end.y - wall.start.y;
-                angle = Math.atan2(dy, dx); // Angle of the wall segment
+            if (wall.curvature && Math.abs(wall.curvature) > 0.001) {
+                const segments = getWallSegments(wall);
+                segments.forEach((seg, idx) => {
+                    const dist = pointToSegmentDistance(p, seg.start, seg.end);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestWall = wall;
+                        const proj = projectPointOnSegment(p, seg.start, seg.end);
+                        // Map local segment T to global wall T [0, 1]
+                        projection = {
+                            point: proj.point,
+                            t: (idx + proj.t) / segments.length
+                        };
+                        const dx = seg.end.x - seg.start.x;
+                        const dy = seg.end.y - seg.start.y;
+                        angle = Math.atan2(dy, dx);
+                    }
+                });
+            } else {
+                const dist = pointToSegmentDistance(p, wall.start, wall.end);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestWall = wall;
+                    projection = projectPointOnSegment(p, wall.start, wall.end);
+                    const dx = wall.end.x - wall.start.x;
+                    const dy = wall.end.y - wall.start.y;
+                    angle = Math.atan2(dy, dx);
+                }
             }
         }
 
@@ -709,18 +728,15 @@ export const useCanvas = () => {
 
         if (!isSofa && !isBed) return newItem;
 
-        const { wall, distance: wallDist } = getClosestWall(worldPos);
+        const { wall, distance: wallDist, projection, angle: wallAngle } = getClosestWall(worldPos);
         const threshold = isSofa ? 7.0 : 5.0;
-        if (!wall || wallDist > threshold) return newItem;
-
+        if (!wall || wallDist > threshold || !projection) return newItem;
 
         // Determine the orientation that faces AWAY from the wall
-        const wallVec = { x: wall.end.x - wall.start.x, y: wall.end.y - wall.start.y };
-        const len = Math.sqrt(wallVec.x ** 2 + wallVec.y ** 2);
-        const nx = -wallVec.y / len;
-        const ny = wallVec.x / len;
+        const nx = -Math.sin(wallAngle);
+        const ny = Math.cos(wallAngle);
 
-        const { point: projPoint } = projectPointOnSegment(worldPos, wall.start, wall.end);
+        const projPoint = projection.point;
 
         // Vector from wall projection to furniture center
         const toCenter = { x: worldPos.x - projPoint.x, y: worldPos.y - projPoint.y };
@@ -787,12 +803,6 @@ export const useCanvas = () => {
                 }
             }
 
-            // FORCE UPDATE selection
-            if (hitId) {
-                setHistory(prev => ({ ...prev, selectedId: hitId }), false);
-            } else {
-                setHistory(prev => ({ ...prev, selectedId: null }), false);
-            }
             // Check objects
             if (!hitId) {
                 for (const obj of state.objects) {
@@ -835,20 +845,7 @@ export const useCanvas = () => {
                     }
                 }
 
-                // Check wall bodies
-                if (!hitId && !isEndpoint) {
-                    for (const wall of state.walls) {
-                        if (pointToSegmentDistance(worldPos, wall.start, wall.end) < wall.thickness / 2 + (5 / viewState.zoom)) {
-                            hitId = wall.id;
-                            setMovingWallId(wall.id);
-                            setDragOffset(worldPos);
-                            snapshot();
-                            break;
-                        }
-                    }
-                }
-
-                // Check curvature handles
+                // Check curvature handles (Priority over body)
                 if (!hitId) {
                     const threshold = 15 / viewState.zoom;
                     for (const wall of state.walls) {
@@ -879,7 +876,38 @@ export const useCanvas = () => {
                     }
                 }
 
-                if (state.selectedId !== hitId && !bendingWallId) {
+                // Check wall bodies (Curve-aware)
+                if (!hitId && !isEndpoint) {
+                    const bodyThreshold = 5 / viewState.zoom;
+                    for (const wall of state.walls) {
+                        let isHit = false;
+                        if (wall.curvature && Math.abs(wall.curvature) > 0.001) {
+                            const segments = getWallSegments(wall);
+                            for (const seg of segments) {
+                                if (pointToSegmentDistance(worldPos, seg.start, seg.end) < wall.thickness / 2 + bodyThreshold) {
+                                    isHit = true;
+                                    break;
+                                }
+                            }
+                        } else {
+                            if (pointToSegmentDistance(worldPos, wall.start, wall.end) < wall.thickness / 2 + bodyThreshold) {
+                                isHit = true;
+                            }
+                        }
+
+                        if (isHit) {
+                            hitId = wall.id;
+                            setMovingWallId(wall.id);
+                            setDragOffset(worldPos);
+                            snapshot();
+                            break;
+                        }
+                    }
+                }
+
+
+                // 6. Update Selection State (Unified)
+                if (state.selectedId !== hitId) {
                     setHistory(prev => ({ ...prev, selectedId: hitId }), false);
                 }
             }
@@ -1126,28 +1154,14 @@ export const useCanvas = () => {
                 }), false);
             }
         } else if (type === 'door' || type === 'window' || type === 'opening') {
-            // Find nearest wall to drop door/window/opening
-            let bestDist = Infinity;
-            let bestWall = null;
-            let bestT = 0;
+            const { wall: bestWall, distance: bestDist, projection: bestProj } = getClosestWall(worldPos);
 
-            for (const wall of state.walls) {
-                if (wall.isVirtual) continue;
-                const dist = pointToSegmentDistance(worldPos, wall.start, wall.end);
-                if (dist < 0.5 && dist < bestDist) {
-                    const { t } = projectPointOnSegment(worldPos, wall.start, wall.end);
-                    bestDist = dist;
-                    bestWall = wall;
-                    bestT = t;
-                }
-            }
-
-            if (bestWall) {
+            if (bestWall && bestDist < 1.0 && bestProj) {
                 const newObj: WallObject = {
                     id: uuidv4(),
                     wallId: bestWall.id,
                     type: type as any,
-                    position: bestT,
+                    position: bestProj.t,
                     width: type === 'door' ? 0.9 : (type === 'window' ? 1.2 : 1.5),
                     height: type === 'door' ? 2.1 : (type === 'window' ? 1.2 : 2.1),
                     offset: type === 'door' ? 0 : (type === 'window' ? 0.9 : 0),
