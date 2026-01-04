@@ -1,7 +1,9 @@
 import React, { Suspense } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera, Grid, ContactShadows, Environment, Text, useTexture } from '@react-three/drei';
+import { OrbitControls, PerspectiveCamera, Grid, ContactShadows, Environment, Text } from '@react-three/drei';
+import { EffectComposer, N8AO } from '@react-three/postprocessing';
 import * as THREE from 'three';
+import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib';
 import { Settings2, ArrowUpFromLine, Home } from 'lucide-react';
 import { detectRooms } from '../utils/roomDetection';
 import type { Wall, Furniture, WallObject, ModelRecipe } from '../types';
@@ -798,6 +800,9 @@ const RoofModel: React.FC<{ walls: Wall[]; height: number }> = ({ walls, height 
     );
 };
 
+// Initialize RectAreaLightUniformsLib
+RectAreaLightUniformsLib.init();
+
 const DoorModel: React.FC<{ width: number; height: number; thickness: number; hinge: 'left' | 'right'; openDirection: 'in' | 'out' }> = ({ width, height, thickness, hinge, openDirection }) => {
     const doorThickness = 0.04;
     const openAngle = (Math.PI / 2); // 90 degrees (Full Open)
@@ -847,7 +852,7 @@ const DoorModel: React.FC<{ width: number; height: number; thickness: number; hi
     );
 };
 
-const WindowModel: React.FC<{ width: number; height: number; thickness: number }> = ({ width, height, thickness }) => {
+const WindowModel: React.FC<{ width: number; height: number; thickness: number; lightIntensity?: number }> = ({ width, height, thickness, lightIntensity = 1.0 }) => {
     const frameWidth = 0.06;
     const vMullionCount = Math.max(1, Math.floor(width / 1.0));
 
@@ -879,11 +884,37 @@ const WindowModel: React.FC<{ width: number; height: number; thickness: number }
                     <meshStandardMaterial color="#333333" />
                 </mesh>
             ))}
+
+            {/* Inward Lighting (RectAreaLight + SpotLight for Shadows) */}
+            <rectAreaLight
+                width={width}
+                height={height}
+                intensity={lightIntensity * 15}
+                color="#e0f2fe"
+                position={[0, height / 2, thickness / 2 + 0.05]}
+                rotation={[0, Math.PI, 0]} // Face Inward
+            />
+
+            {/* Companion SpotLight for Shadow Casting */}
+            <spotLight
+                position={[0, height / 2, thickness / 2 + 0.1]}
+                angle={0.6}
+                penumbra={0.5}
+                intensity={lightIntensity * 60}
+                distance={20}
+                castShadow
+                shadow-mapSize={[1024, 1024]}
+                shadow-bias={-0.0001}
+                color="#e0f2fe"
+            >
+                {/* Direct the light inward */}
+                <object3D attach="target" position={[0, 0, -5]} />
+            </spotLight>
         </group>
     );
 };
 
-const WallObjectMesh: React.FC<{ obj: WallObject; wall: Wall }> = ({ obj, wall }) => {
+const WallObjectMesh: React.FC<{ obj: WallObject; wall: Wall; lightIntensity?: number }> = ({ obj, wall, lightIntensity }) => {
     const dx = wall.end.x - wall.start.x;
     const dy = wall.end.y - wall.start.y;
     const wallAngle = Math.atan2(dy, dx);
@@ -914,6 +945,7 @@ const WallObjectMesh: React.FC<{ obj: WallObject; wall: Wall }> = ({ obj, wall }
                     width={obj.width}
                     height={finalHeight}
                     thickness={wall.thickness}
+                    lightIntensity={lightIntensity}
                 />
             )}
         </group>
@@ -1439,7 +1471,15 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furn
                 </div>
             )}
 
-            <Canvas shadows gl={{ antialias: true }}>
+            <Canvas
+                id="three-canvas"
+                shadows="soft"
+                gl={{
+                    antialias: true,
+                    localClippingEnabled: true,
+                    preserveDrawingBuffer: true
+                }}
+            >
                 <PerspectiveCamera makeDefault position={[12, 12, 12]} fov={40} />
                 <MaterialDropHandler onApplyMaterial={onApplyMaterial} containerRef={containerRef} />
                 <OrbitControls makeDefault minPolarAngle={0} maxPolarAngle={Math.PI / 2.1} />
@@ -1481,8 +1521,6 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furn
                             const maxX = Math.max(...room.path.map(p => p.x));
                             const minY = Math.min(...room.path.map(p => p.y));
                             const maxY = Math.max(...room.path.map(p => p.y));
-                            const roomWidth = maxX - minX;
-                            const roomHeight = maxY - minY;
 
                             return (
                                 <mesh
@@ -1517,11 +1555,10 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furn
                             />
                         ))}
 
-                        {/* Doors & Windows (Physical sub-meshes) */}
                         {objects.filter(o => o.type !== 'opening').map(obj => {
                             const parentWall = walls.find(w => w.id === obj.wallId);
                             if (!parentWall) return null;
-                            return <WallObjectMesh key={obj.id} obj={obj} wall={parentWall} />;
+                            return <WallObjectMesh key={obj.id} obj={obj} wall={parentWall} lightIntensity={lightIntensity} />;
                         })}
 
                         {/* Furniture */}
@@ -1532,6 +1569,16 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furn
                     </group>
 
                     <ContactShadows position={[0, 0, 0]} opacity={0.4} scale={30} blur={2.5} far={10} />
+
+                    <EffectComposer disableNormalPass multisampling={4}>
+                        <N8AO
+                            intensity={1.2}
+                            aoRadius={1.5}
+                            distanceFalloff={1.0}
+                            color="#000000"
+                            halfRes={false}
+                        />
+                    </EffectComposer>
                 </Suspense>
 
                 <ambientLight intensity={ambientIntensity} />

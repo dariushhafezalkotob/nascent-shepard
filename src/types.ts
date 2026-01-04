@@ -43,6 +43,7 @@ export interface Wall {
     materialId?: string;
     materialSideA?: string;
     materialSideB?: string;
+    curvature?: number; // Bulge factor: 0 is straight, positive/negative for different directions
 }
 
 export interface WallObject {

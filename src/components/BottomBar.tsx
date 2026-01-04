@@ -7,8 +7,8 @@ import {
 import { FURNITURE_TEMPLATES } from '../constants/FurnitureTemplates';
 
 interface BottomBarProps {
-    activeTab: 'layout' | 'furniture' | 'surfaces' | '3d';
-    setActiveTab: (tab: 'layout' | 'furniture' | 'surfaces' | '3d') => void;
+    activeTab: 'layout' | 'furniture' | 'surfaces' | '3d' | 'rendering';
+    setActiveTab: (tab: 'layout' | 'furniture' | 'surfaces' | '3d' | 'rendering') => void;
     onToolSelect: (tool: 'wall' | 'select') => void;
     onOpenAI?: () => void;
     onNew?: () => void;
@@ -31,6 +31,7 @@ export const BottomBar: React.FC<BottomBarProps> = ({
         { id: 'furniture', label: 'Furniture', icon: Sofa },
         { id: '3d', label: '3D View', icon: Boxes },
         { id: 'surfaces', label: 'Wall / Floor', icon: PaintBucket },
+        { id: 'rendering', label: 'AI Render', icon: Sparkles },
     ];
 
     const layoutItems = [
@@ -118,6 +119,10 @@ export const BottomBar: React.FC<BottomBarProps> = ({
 
                 {activeTab === '3d' && (
                     <div className="text-sm text-zinc-400 italic w-full text-center font-medium">3D Scene generated from your layout. Use your mouse to rotate and zoom.</div>
+                )}
+
+                {activeTab === 'rendering' && (
+                    <div className="text-sm text-zinc-400 italic w-full text-center font-medium">Position your camera and click "Generate AI Render" to create a photorealistic masterpiece.</div>
                 )}
             </div>
         </div>

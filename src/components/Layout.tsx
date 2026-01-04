@@ -14,6 +14,7 @@ import { MaterialsSidebar } from './MaterialsSidebar';
 import { DecorationSetupModal } from './DecorationSetupModal';
 import { ProductPickerPopup } from './ProductPickerPopup';
 import { distributeBudget } from '../utils/budgetDistribution';
+import { AIRenderingOverlay } from './AIRenderingOverlay';
 import type { Choice } from '../types';
 
 export const Layout: React.FC = () => {
@@ -38,7 +39,7 @@ export const Layout: React.FC = () => {
         resetCanvas
     } = useCanvas();
 
-    const [activeTab, setActiveTab] = React.useState<'layout' | 'furniture' | 'surfaces' | '3d'>('layout');
+    const [activeTab, setActiveTab] = React.useState<'layout' | 'furniture' | 'surfaces' | '3d' | 'rendering'>('layout');
     const [isAIModalOpen, setIsAIModalOpen] = React.useState(false);
     const [isSaveModalOpen, setIsSaveModalOpen] = React.useState(false);
     const [isDecorationModalOpen, setIsDecorationModalOpen] = React.useState(false);
@@ -221,7 +222,7 @@ export const Layout: React.FC = () => {
         <div className="flex h-screen w-screen overflow-hidden bg-white text-black font-sans">
             <div className="flex-1 flex flex-col relative min-w-0 shadow-inner">
                 <div className="flex-1 relative overflow-hidden bg-white">
-                    {activeTab === '3d' || activeTab === 'surfaces' ? (
+                    {activeTab === '3d' || activeTab === 'surfaces' || activeTab === 'rendering' ? (
                         <ThreeDViewer
                             walls={state.walls}
                             objects={state.objects}
@@ -230,7 +231,7 @@ export const Layout: React.FC = () => {
                             onUpdateWallHeight={updateGlobalWallHeight}
                             onApplyMaterial={handleApplyMaterial}
                             floorMaterials={state.floorMaterials}
-                            hideSettings={activeTab === 'surfaces'}
+                            hideSettings={activeTab === 'surfaces' || activeTab === 'rendering'}
                         />
                     ) : (
                         <EditorCanvas
@@ -244,7 +245,7 @@ export const Layout: React.FC = () => {
                         />
                     )}
 
-                    {activeTab !== '3d' && activeTab !== 'surfaces' && (
+                    {activeTab !== '3d' && activeTab !== 'surfaces' && activeTab !== 'rendering' && (
                         <NavigationWidget
                             onZoomIn={zoomIn}
                             onZoomOut={zoomOut}
@@ -252,7 +253,9 @@ export const Layout: React.FC = () => {
                         />
                     )}
 
-                    {referenceImage && activeTab !== 'surfaces' && (
+                    {activeTab === 'rendering' && <AIRenderingOverlay apiKey={apiKey} onBack={() => setActiveTab('3d')} />}
+
+                    {referenceImage && activeTab === 'layout' && (
                         <div className="absolute top-4 left-4 z-10 bg-white p-2 rounded shadow-lg border border-zinc-200 w-[30vw] max-w-[400px] min-w-[200px] max-h-[85vh] flex flex-col overflow-hidden">
                             <div className="flex justify-between items-center mb-2 flex-shrink-0">
                                 <h3 className="text-xs font-bold text-zinc-500 uppercase">
@@ -325,7 +328,7 @@ export const Layout: React.FC = () => {
 
             <AIModal isOpen={isAIModalOpen} onClose={() => setIsAIModalOpen(false)} onGenerate={handleAIGenerate} apiKey={apiKey} setApiKey={setApiKey} />
 
-            {(activeTab === 'furniture' || activeTab === 'layout') && (
+            {activeTab !== 'rendering' && (activeTab === 'furniture' || activeTab === 'layout') && (
                 <RightSidebar
                     selectedId={state.selectedId}
                     walls={state.walls}

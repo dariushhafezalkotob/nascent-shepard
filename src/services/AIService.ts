@@ -159,6 +159,20 @@ RETURN JSON ONLY:
 }
 `;
 
+const PHOTOREAL_RENDER_PROMPT = `
+ACT AS AN ULTRA-PHOTOREALISTIC photographer.
+TASK: Transform the provided wireframe/3D model screenshot into an ultra-photorealistic architectural interior render.
+
+STRICT CONSTRAINTS:
+1. GEOMETRY: You MUST EXACTLY matching the provided floor plan geometry. Do NOT move walls, do NOT change furniture positions.
+2. REALISM: photorealistic architecture photography style.
+3. TEXTURES: Apply high-quality wood, stone, fabric, and glass textures based on the scene context.
+4. LIGHTING: Use cinematic lighting, including natural light from windows and realistic artificial glows from lamps.
+5. STYLE: Modern, luxurious, and clean architectural photography style.
+
+OUTPUT: Provide ONLY the photorealistic image.
+`;
+
 interface VisionRoom {
     name: string;
     corners: { x: number; y: number }[];
@@ -200,7 +214,15 @@ export class AIService {
 
         const genAI = new GoogleGenerativeAI(apiKey);
 
-        // 1. FEASIBILITY CHECK
+        // 1. IMPORT CASE
+        if (data.importedImage) {
+            console.log("Processing imported floor plan image...");
+            const landWidth = parseFloat(data.landWidth) || 15;
+            const landDepth = parseFloat(data.landDepth) || 20;
+            return this.analyzeImportedImage(data.importedImage, apiKey, { landWidth, landDepth, targetArea: landWidth * landDepth });
+        }
+
+        // 2. GENERATION CASE
         const landWidth = parseFloat(data.landWidth) || 0;
         const landDepth = parseFloat(data.landDepth) || 0;
         const landArea = landWidth * landDepth;
@@ -232,6 +254,52 @@ export class AIService {
         return this.mockOrRealImplementation(userPrompt, genAI, apiKey, { landWidth, landDepth, targetArea: requiredArea, projectType }, selectedModel);
     }
 
+    static async renderPhotorealistic(base64Image: string, apiKey: string): Promise<string> {
+        if (!apiKey) throw new Error("API Key required");
+
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({ model: "gemini-3-pro-image-preview" });
+
+        console.log("Generating Photorealistic AI Render with gemini-3-pro-image-preview...");
+
+        try {
+            const result = await model.generateContent({
+                contents: [{
+                    role: 'user',
+                    parts: [
+                        { text: PHOTOREAL_RENDER_PROMPT },
+                        { inlineData: { data: base64Image.split(',')[1], mimeType: "image/png" } }
+                    ]
+                }],
+                generationConfig: {
+                    // @ts-ignore
+                    responseModalities: ["IMAGE"]
+                }
+            });
+
+            const response = await result.response;
+            // @ts-ignore
+            const generatedImage = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+
+            if (!generatedImage) {
+                // Secondary check for part-based images
+                // @ts-ignore
+                const firstPart = response.candidates?.[0]?.content?.parts?.[0];
+                // @ts-ignore
+                if (firstPart?.inlineData?.data) {
+                    // @ts-ignore
+                    return `data:image/png;base64,${firstPart.inlineData.data}`;
+                }
+                throw new Error("AI failed to generate a photorealistic image. It might have returned only text.");
+            }
+
+            return `data:image/png;base64,${generatedImage}`;
+        } catch (error: any) {
+            console.error("Gemini Rendering Error:", error);
+            throw new Error(`Rendering Failed: ${error.message || "Unknown AI error"}`);
+        }
+    }
+
     private static async retryWithBackoff<T>(
         operation: () => Promise<T>,
         retries: number = 3,
@@ -248,7 +316,7 @@ export class AIService {
                 console.error("Hard API Error (No Retry):", msg);
                 // Throw a more friendly error if it's the limit issue
                 if (msg.includes('limit: 0')) {
-                    throw new Error("Your API Key does not have access to 'gemini-2.0-flash-exp'. Please check your Google AI Studio billing/plan or use a different model.");
+                    throw new Error("Your API Key does not have access to the selected model. Please check your Google AI Studio billing/plan or use a different model.");
                 }
                 throw error; // Throw immediately, do not retry
             }
@@ -377,6 +445,14 @@ export class AIService {
         }
     }
 
+    static async analyzeImportedImage(base64Image: string, apiKey: string, constraints?: { landWidth: number, landDepth: number, targetArea: number, projectType?: string }): Promise<{ walls: Wall[], objects: any[], furniture: Furniture[], labels: RoomLabel[], generatedImage?: string, rawResponse?: string, dimensions?: { width: number, depth: number } }> {
+        if (!apiKey) throw new Error("API Key required");
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const visionModel = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+
+        return this.performVisionAnalysis(base64Image, visionModel, constraints);
+    }
+
     private static async mockOrRealImplementation(userPrompt: string, genAI: GoogleGenerativeAI, apiKey: string, constraints?: { landWidth: number, landDepth: number, targetArea: number, projectType?: string }, modelName: string = 'gemini-3-flash-preview') {
 
         // Store constraints temporarily for sub-calls (Hack for static method flow)
@@ -387,10 +463,12 @@ export class AIService {
         const base64Image = await this.generateImage(userPrompt, apiKey, modelName, constraints?.projectType);
 
         // --- STEP 2: VISION ANALYSIS ---
-        console.log("Step 2: Vision Analysis...");
-        // User requested exact model from their python script
         const visionModel = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+        return this.performVisionAnalysis(base64Image, visionModel, constraints);
+    }
 
+    private static async performVisionAnalysis(base64Image: string, visionModel: any, constraints?: { landWidth: number, landDepth: number, targetArea: number, projectType?: string }) {
+        console.log("Vision Analysis Started...");
         try {
             // STEP 2A: STRUCTURAL SCAN
             const structuralResp = await this.retryWithBackoff(async () => {
@@ -465,7 +543,7 @@ export class AIService {
             };
 
         } catch (e: any) {
-            console.error("Step 2 Failed:", e);
+            console.error("Vision Step Failed:", e);
             throw new Error(`Vision Analysis Failed: ${e.message}`);
         }
     }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Sparkles, Loader2 } from 'lucide-react';
+import { X, Sparkles, Loader2, Upload, Image as ImageIcon } from 'lucide-react';
 
 interface AIModalProps {
     isOpen: boolean;
@@ -22,6 +22,8 @@ export const AIModal: React.FC<AIModalProps> = ({ isOpen, onClose, onGenerate, a
     });
 
     const [isLoading, setIsLoading] = useState(false);
+    const [importedImage, setImportedImage] = useState<string | null>(null);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     if (!isOpen) return null;
@@ -30,12 +32,37 @@ export const AIModal: React.FC<AIModalProps> = ({ isOpen, onClose, onGenerate, a
         setFormData(prev => ({ ...prev, [field]: value }));
     };
 
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // Check file type
+        if (!file.type.startsWith('image/')) {
+            setError('Please upload an image file (PNG, JPG).');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const base64 = event.target?.result as string;
+            const cleanBase64 = base64.split(',')[1]; // Remove data:image/png;base64,
+            setImportedImage(cleanBase64);
+            setPreviewUrl(base64);
+            setError(null);
+        };
+        reader.readAsDataURL(file);
+    };
+
     const handleGenerate = async () => {
         setIsLoading(true);
         setError(null);
 
         try {
-            await onGenerate(formData, apiKey);
+            const finalData = {
+                ...formData,
+                importedImage: importedImage
+            };
+            await onGenerate(finalData, apiKey);
             onClose();
         } catch (err: any) {
             setError(err.message || 'Failed to generate layout');
@@ -142,6 +169,48 @@ export const AIModal: React.FC<AIModalProps> = ({ isOpen, onClose, onGenerate, a
                                 />
                             </div>
                         </div>
+
+                        {/* Section 4: Import Image */}
+                        <div className="col-span-full border-b border-zinc-100 pb-2 mb-2 mt-4">
+                            <h3 className="text-sm font-semibold text-zinc-900">4. Import Your Own Floor Plan (Optional)</h3>
+                            <p className="text-[10px] text-zinc-400 mt-0.5 italic">Upload a blueprint or sketch to bypass AI generation and scan it directly.</p>
+                        </div>
+                        <div className="col-span-full">
+                            <div className="flex items-center gap-4">
+                                <label className="flex-1 cursor-pointer">
+                                    <div className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center gap-2 transition-all ${previewUrl ? 'border-indigo-500 bg-indigo-50/30' : 'border-zinc-200 hover:border-indigo-400 hover:bg-zinc-50'}`}>
+                                        <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
+                                        {previewUrl ? (
+                                            <div className="relative group mx-auto">
+                                                <img src={previewUrl} alt="Import Preview" className="w-32 h-32 object-contain rounded-lg shadow-md border border-white" />
+                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded-lg transition-opacity text-white text-xs font-bold">
+                                                    Change Image
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <div className="p-3 bg-indigo-100 text-indigo-600 rounded-full">
+                                                    <Upload size={24} />
+                                                </div>
+                                                <div className="text-center">
+                                                    <p className="text-sm font-medium text-zinc-700">Click to upload blueprint</p>
+                                                    <p className="text-xs text-zinc-400 mt-1">PNG, JPG or JPEG (Max 5MB)</p>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                </label>
+                                {previewUrl && (
+                                    <button
+                                        onClick={() => { setPreviewUrl(null); setImportedImage(null); }}
+                                        className="p-2 text-zinc-400 hover:text-red-500 transition-colors"
+                                        title="Remove Image"
+                                    >
+                                        <X size={20} />
+                                    </button>
+                                )}
+                            </div>
+                        </div>
                     </div>
 
                     <div className="mt-8 pt-4 border-t border-zinc-200">
@@ -196,12 +265,12 @@ export const AIModal: React.FC<AIModalProps> = ({ isOpen, onClose, onGenerate, a
                         {isLoading ? (
                             <>
                                 <Loader2 size={16} className="animate-spin" />
-                                Designing...
+                                {importedImage ? 'Scanning Image...' : 'Designing...'}
                             </>
                         ) : (
                             <>
-                                <Sparkles size={16} />
-                                Generate Floor Plan
+                                {importedImage ? <ImageIcon size={16} /> : <Sparkles size={16} />}
+                                {importedImage ? 'Scan Uploaded Plan' : 'Generate Floor Plan'}
                             </>
                         )}
                     </button>

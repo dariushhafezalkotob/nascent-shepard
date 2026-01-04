@@ -1,4 +1,4 @@
-import type { Point } from '../types';
+import type { Point, Wall } from '../types';
 
 export const distance = (p1: Point, p2: Point): number => {
     return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
@@ -121,4 +121,69 @@ export const getSegmentIntersection = (p1: Point, p2: Point, p3: Point, p4: Poin
         };
     }
     return null;
+};
+
+export const getArcPoints = (start: Point, end: Point, curvature: number, segments: number = 20): Point[] => {
+    if (!curvature || Math.abs(curvature) < 0.001) return [start, end];
+
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 0.001) return [start];
+
+    // Bulge (b) = sagitta / (chord / 2)
+    // Radius (r) = (chord / 2) * (1 + b^2) / (2b)
+    const b = curvature;
+    const chord = dist;
+    const r = (chord / 2) * (1 + b * b) / (2 * b);
+
+    // Sagitta s = b * (chord / 2)
+    const s = b * (chord / 2);
+
+    // Center point
+    const midX = (start.x + end.x) / 2;
+    const midY = (start.y + end.y) / 2;
+
+    // Perpendicular vector
+    const perpX = -dy / dist;
+    const perpY = dx / dist;
+
+    // Center coordinates
+    const centerX = midX + (r - s) * perpX;
+    const centerY = midY + (r - s) * perpY;
+
+    // Angles
+    const startAngle = Math.atan2(start.y - centerY, start.x - centerX);
+    const endAngle = Math.atan2(end.y - centerY, end.x - centerX);
+
+    let diff = endAngle - startAngle;
+    if (b > 0) {
+        if (diff <= 0) diff += 2 * Math.PI;
+    } else {
+        if (diff >= 0) diff -= 2 * Math.PI;
+    }
+
+    const points: Point[] = [];
+    for (let i = 0; i <= segments; i++) {
+        const angle = startAngle + (diff * i) / segments;
+        points.push({
+            x: centerX + Math.abs(r) * Math.cos(angle),
+            y: centerY + Math.abs(r) * Math.sin(angle)
+        });
+    }
+
+    return points;
+};
+
+export const getWallSegments = (wall: Wall, segments: number = 20): { start: Point; end: Point }[] => {
+    if (!wall.curvature || Math.abs(wall.curvature) < 0.001) {
+        return [{ start: wall.start, end: wall.end }];
+    }
+
+    const points = getArcPoints(wall.start, wall.end, wall.curvature, segments);
+    const result = [];
+    for (let i = 0; i < points.length - 1; i++) {
+        result.push({ start: points[i], end: points[i + 1] });
+    }
+    return result;
 };
