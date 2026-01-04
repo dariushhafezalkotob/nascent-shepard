@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import type { EditorState, Point, Wall, WallObject, RoomLabel, Furniture } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { distance, pointToSegmentDistance, projectPointOnSegment, sub, add, scale, isPointInPolygon } from '../utils/geometry';
+import { distance, pointToSegmentDistance, projectPointOnSegment, sub, add, scale, isPointInPolygon, getWallSegments } from '../utils/geometry';
 import { useHistory } from './useHistory';
 import { detectRooms } from '../utils/roomDetection';
 import { FURNITURE_TEMPLATES } from '../constants/FurnitureTemplates';
@@ -60,6 +60,7 @@ export const useCanvas = () => {
     const [movingWallId, setMovingWallId] = useState<string | null>(null);
     const [movingObjectId, setMovingObjectId] = useState<string | null>(null);
     const [movingFurnitureId, setMovingFurnitureId] = useState<string | null>(null);
+    const [bendingWallId, setBendingWallId] = useState<string | null>(null);
     const [dragOffset, setDragOffset] = useState<Point | null>(null);
 
     // Coordinate conversion
@@ -243,18 +244,56 @@ export const useCanvas = () => {
                 ctx.setLineDash([5, 5]);
                 ctx.stroke();
                 ctx.setLineDash([]);
+                ctx.setLineDash([]);
             } else {
                 // Wall Body
                 ctx.beginPath();
-                const p1 = { x: start.x + nx * thickness / 2, y: start.y + ny * thickness / 2 };
-                const p2 = { x: end.x + nx * thickness / 2, y: end.y + ny * thickness / 2 };
-                const p3 = { x: end.x - nx * thickness / 2, y: end.y - ny * thickness / 2 };
-                const p4 = { x: start.x - nx * thickness / 2, y: start.y - ny * thickness / 2 };
+                if (wall.curvature && Math.abs(wall.curvature) > 0.001) {
+                    // Curved Wall Polygon construction
+                    const segments = getWallSegments(wall);
+                    const topPoints: Point[] = [];
+                    const bottomPoints: Point[] = [];
 
-                ctx.moveTo(p1.x, p1.y);
-                ctx.lineTo(p2.x, p2.y);
-                ctx.lineTo(p3.x, p3.y);
-                ctx.lineTo(p4.x, p4.y);
+                    segments.forEach((seg) => {
+                        const s = worldToScreen(seg.start);
+                        const e = worldToScreen(seg.end);
+                        const dx = e.x - s.x;
+                        const dy = e.y - s.y;
+                        const len = Math.sqrt(dx * dx + dy * dy);
+                        if (len === 0) return;
+
+                        const snx = -dy / len;
+                        const sny = dx / len;
+
+                        // Collect top points (for outward-facing wall edge)
+                        topPoints.push({ x: s.x + snx * thickness / 2, y: s.y + sny * thickness / 2 });
+                        if (seg === segments[segments.length - 1]) {
+                            topPoints.push({ x: e.x + snx * thickness / 2, y: e.y + sny * thickness / 2 });
+                        }
+
+                        // Collect bottom points (for inward-facing wall edge)
+                        bottomPoints.push({ x: s.x - snx * thickness / 2, y: s.y - sny * thickness / 2 });
+                        if (seg === segments[segments.length - 1]) {
+                            bottomPoints.push({ x: e.x - snx * thickness / 2, y: e.y - sny * thickness / 2 });
+                        }
+                    });
+
+                    // Build full polygon: top points then bottom points reversed
+                    ctx.moveTo(topPoints[0].x, topPoints[0].y);
+                    topPoints.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+                    bottomPoints.reverse().forEach(p => ctx.lineTo(p.x, p.y));
+                } else {
+                    // Straight Wall
+                    const p1 = { x: start.x + nx * thickness / 2, y: start.y + ny * thickness / 2 };
+                    const p2 = { x: end.x + nx * thickness / 2, y: end.y + ny * thickness / 2 };
+                    const p3 = { x: end.x - nx * thickness / 2, y: end.y - ny * thickness / 2 };
+                    const p4 = { x: start.x - nx * thickness / 2, y: start.y - ny * thickness / 2 };
+
+                    ctx.moveTo(p1.x, p1.y);
+                    ctx.lineTo(p2.x, p2.y);
+                    ctx.lineTo(p3.x, p3.y);
+                    ctx.lineTo(p4.x, p4.y);
+                }
                 ctx.closePath();
 
                 ctx.fillStyle = isSelected ? '#1e40af' : '#000000';
@@ -266,7 +305,7 @@ export const useCanvas = () => {
 
             // Draw Dimensions
             const dist = distance(wall.start, wall.end);
-            const dimOffset = 30 * fontScale;
+            const dimOffset = (wall.curvature && Math.abs(wall.curvature) > 0.5) ? 60 * fontScale : 30 * fontScale;
             drawDimension(wall.start, wall.end, `${dist.toFixed(2)}m`, dimOffset);
 
             // Draw Objects
@@ -514,6 +553,33 @@ export const useCanvas = () => {
             if (state.selectedId === wall.id) {
                 drawVertex(wall.start);
                 drawVertex(wall.end);
+
+                // Draw a control point for curvature if wall is selected
+                if (wall.curvature !== undefined || true) {
+                    const midX = (wall.start.x + wall.end.x) / 2;
+                    const midY = (wall.start.y + wall.end.y) / 2;
+                    const dx = wall.end.x - wall.start.x;
+                    const dy = wall.end.y - wall.start.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const nx = -dy / dist;
+                    const ny = dx / dist;
+                    const bulge = wall.curvature || 0;
+                    const sagitta = bulge * (dist / 2);
+                    const controlPoint = {
+                        x: midX + nx * sagitta,
+                        y: midY + ny * sagitta
+                    };
+
+                    const sp = worldToScreen(controlPoint);
+                    const radius = Math.max(3, 5 * fontScale);
+                    ctx.beginPath();
+                    ctx.arc(sp.x, sp.y, radius, 0, Math.PI * 2);
+                    ctx.fillStyle = '#10b981'; // Green for curvature handle
+                    ctx.fill();
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = Math.max(0.5, 1 * fontScale);
+                    ctx.stroke();
+                }
             }
         });
 
@@ -782,7 +848,38 @@ export const useCanvas = () => {
                     }
                 }
 
-                if (state.selectedId !== hitId) {
+                // Check curvature handles
+                if (!hitId) {
+                    const threshold = 15 / viewState.zoom;
+                    for (const wall of state.walls) {
+                        if (state.selectedId === wall.id) {
+                            // Calculate current handle position
+                            const midX = (wall.start.x + wall.end.x) / 2;
+                            const midY = (wall.start.y + wall.end.y) / 2;
+                            const dx = wall.end.x - wall.start.x;
+                            const dy = wall.end.y - wall.start.y;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            if (dist < 0.001) continue;
+                            const nx = -dy / dist;
+                            const ny = dx / dist;
+                            const bulge = wall.curvature || 0;
+                            const sagitta = bulge * (dist / 2);
+                            const controlPoint = {
+                                x: midX + nx * sagitta,
+                                y: midY + ny * sagitta
+                            };
+
+                            if (distance(worldPos, controlPoint) < threshold) {
+                                hitId = wall.id;
+                                setBendingWallId(wall.id);
+                                snapshot();
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (state.selectedId !== hitId && !bendingWallId) {
                     setHistory(prev => ({ ...prev, selectedId: hitId }), false);
                 }
             }
@@ -816,6 +913,32 @@ export const useCanvas = () => {
             const dy = mousePos.y - dragStart.y;
             setViewState(prev => ({ ...prev, pan: { x: prev.pan.x + dx, y: prev.pan.y + dy } }));
             setDragStart(mousePos);
+            return;
+        }
+
+        if (bendingWallId) {
+            const wall = state.walls.find(w => w.id === bendingWallId);
+            if (wall) {
+                const midX = (wall.start.x + wall.end.x) / 2;
+                const midY = (wall.start.y + wall.end.y) / 2;
+                const dx = wall.end.x - wall.start.x;
+                const dy = wall.end.y - wall.start.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist > 0.01) {
+                    const chordDir = { x: dx / dist, y: dy / dist };
+                    const perpDir = { x: -chordDir.y, y: chordDir.x };
+                    const toMouse = { x: worldPos.x - midX, y: worldPos.y - midY };
+                    const sagitta = toMouse.x * perpDir.x + toMouse.y * perpDir.y;
+                    let bulge = sagitta / (dist / 2);
+                    bulge = Math.max(-2, Math.min(2, bulge));
+
+                    setHistory(prev => ({
+                        ...prev,
+                        walls: prev.walls.map(w => w.id === bendingWallId ? { ...w, curvature: bulge } : w)
+                    }), true);
+                }
+            }
             return;
         }
 
@@ -959,6 +1082,7 @@ export const useCanvas = () => {
         setMovingWallId(null);
         setMovingObjectId(null);
         setMovingFurnitureId(null);
+        setBendingWallId(null);
         setDragOffset(null);
     }, [activeWallId]);
 

@@ -138,6 +138,34 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                                     </div>
                                 </div>
                             </div>
+
+                            <div className="space-y-1.5 pt-2">
+                                <label className="text-[10px] font-semibold text-zinc-500 uppercase flex items-center gap-1.5">
+                                    <Sparkles size={12} className="text-indigo-500" /> Wall Curvature
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type="number"
+                                        value={selectedWall.curvature || 0}
+                                        onChange={(e) => updateWall(selectedWall.id, { curvature: Number(e.target.value) })}
+                                        onFocus={snapshot}
+                                        step="0.01"
+                                        className="w-full px-3 py-2 bg-zinc-100 border border-zinc-200 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                    />
+                                    <span className="absolute right-3 top-2 text-xs text-zinc-400">bulge</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="-2"
+                                    max="2"
+                                    step="0.01"
+                                    value={selectedWall.curvature || 0}
+                                    onChange={(e) => updateWall(selectedWall.id, { curvature: Number(e.target.value) })}
+                                    onMouseDown={snapshot}
+                                    className="w-full mt-2 accent-indigo-500"
+                                />
+                                <p className="text-[9px] text-zinc-400 italic">Drag green handle on canvas to bend manually</p>
+                            </div>
                         </div>
 
                         <div className="pt-4 border-t border-zinc-200">

@@ -8,6 +8,7 @@ import { Settings2, ArrowUpFromLine, Home } from 'lucide-react';
 import { detectRooms } from '../utils/roomDetection';
 import type { Wall, Furniture, WallObject, ModelRecipe } from '../types';
 import { SURFACE_MATERIALS } from '../constants/SurfaceMaterials';
+import { getWallSegments, distance } from '../utils/geometry';
 
 const FurnitureLabel: React.FC<{ text: string; position: [number, number, number]; rotation?: [number, number, number]; fontSize?: number }> = ({ text, position, rotation = [0, 0, 0], fontSize = 0.08 }) => (
     <Text
@@ -1547,13 +1548,44 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furn
                         })}
 
                         {/* Walls (Physical only, segmented for holes) */}
-                        {walls.filter(w => !w.isVirtual).map(wall => (
-                            <SegmentedWall
-                                key={wall.id}
-                                wall={wall}
-                                objects={objects.filter(o => o.wallId === wall.id)}
-                            />
-                        ))}
+                        {walls.filter(w => !w.isVirtual).map(wall => {
+                            const wallObjects = objects.filter(o => o.wallId === wall.id);
+                            if (wall.curvature && Math.abs(wall.curvature) > 0.001) {
+                                const segments = getWallSegments(wall);
+                                return segments.map((seg, idx) => {
+                                    const segStartT = idx / segments.length;
+                                    const segEndT = (idx + 1) / segments.length;
+
+                                    const segObjects = wallObjects.filter(obj =>
+                                        obj.position >= segStartT && obj.position < segEndT
+                                    ).map(obj => ({
+                                        ...obj,
+                                        position: (obj.position - segStartT) * segments.length
+                                    }));
+
+                                    const virtualWall: Wall = {
+                                        ...wall,
+                                        start: seg.start,
+                                        end: seg.end,
+                                        curvature: 0
+                                    };
+                                    return (
+                                        <SegmentedWall
+                                            key={`${wall.id}-${idx}`}
+                                            wall={virtualWall}
+                                            objects={segObjects}
+                                        />
+                                    );
+                                });
+                            }
+                            return (
+                                <SegmentedWall
+                                    key={wall.id}
+                                    wall={wall}
+                                    objects={wallObjects}
+                                />
+                            );
+                        })}
 
                         {objects.filter(o => o.type !== 'opening').map(obj => {
                             const parentWall = walls.find(w => w.id === obj.wallId);

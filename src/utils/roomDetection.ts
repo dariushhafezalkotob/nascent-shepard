@@ -1,5 +1,5 @@
 import type { Wall, Point } from '../types';
-import { distance, pointToSegmentDistance, projectPointOnSegment } from './geometry';
+import { distance, pointToSegmentDistance, projectPointOnSegment, getWallSegments } from './geometry';
 
 export interface Room {
     id: string;
@@ -16,6 +16,25 @@ const pointKey = (p: Point) => `${Math.round(p.x * 100)},${Math.round(p.y * 100)
 export const detectRooms = (walls: Wall[]): Room[] => {
     // 0. Pre-process: Planarize Graph (Handle T-Junctions)
 
+    const expandedWalls: Wall[] = [];
+    walls.forEach(wall => {
+        if (wall.curvature && Math.abs(wall.curvature) > 0.001) {
+            const segments = getWallSegments(wall);
+            segments.forEach((seg, idx) => {
+                expandedWalls.push({
+                    ...wall,
+                    id: `${wall.id}-seg-${idx}`,
+                    start: seg.start,
+                    end: seg.end,
+                    curvature: 0,
+                    isVirtual: true // Treat segments as virtual for internal logic
+                });
+            });
+        } else {
+            expandedWalls.push(wall);
+        }
+    });
+
     // Map wall ID to list of cut points (t values 0..1)
     const cuts = new Map<string, number[]>();
 
@@ -28,9 +47,9 @@ export const detectRooms = (walls: Wall[]): Room[] => {
         }
     };
 
-    // Find all T-junctions
-    for (const w1 of walls) {
-        for (const w2 of walls) {
+    // Find all T-junctions using expandedWalls
+    for (const w1 of expandedWalls) {
+        for (const w2 of expandedWalls) {
             if (w1.id === w2.id) continue;
 
             const checkPoint = (p: Point) => {
@@ -47,7 +66,7 @@ export const detectRooms = (walls: Wall[]): Room[] => {
 
     const segments: { start: Point; end: Point }[] = [];
 
-    walls.forEach(wall => {
+    expandedWalls.forEach(wall => {
         const wallCuts = cuts.get(wall.id);
         if (!wallCuts || wallCuts.length === 0) {
             segments.push({ start: wall.start, end: wall.end });
@@ -56,7 +75,6 @@ export const detectRooms = (walls: Wall[]): Room[] => {
             wallCuts.sort((a, b) => a - b);
 
             let prevPoint = wall.start;
-
             const wallVec = { x: wall.end.x - wall.start.x, y: wall.end.y - wall.start.y };
 
             wallCuts.forEach(t => {
