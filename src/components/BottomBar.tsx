@@ -2,14 +2,14 @@ import React from 'react';
 import {
     DoorOpen, AppWindow, Square, PenTool, LayoutTemplate,
     Sofa, PaintBucket, Sparkles, Bed, Utensils, Bath,
-    Boxes, PlusCircle, FolderOpen
+    Boxes, PlusCircle, FolderOpen, Scissors
 } from 'lucide-react';
 import { FURNITURE_TEMPLATES } from '../constants/FurnitureTemplates';
 
 interface BottomBarProps {
     activeTab: 'layout' | 'furniture' | 'surfaces' | '3d' | 'rendering';
     setActiveTab: (tab: 'layout' | 'furniture' | 'surfaces' | '3d' | 'rendering') => void;
-    onToolSelect: (tool: 'wall' | 'select') => void;
+    onToolSelect: (tool: 'wall' | 'divider' | 'select') => void;
     onOpenAI?: () => void;
     onNew?: () => void;
     onLoad?: () => void;
@@ -40,6 +40,7 @@ export const BottomBar: React.FC<BottomBarProps> = ({
         { type: 'ai', icon: Sparkles, label: 'AI Architect', action: onOpenAI },
         { type: 'separator', isSeparator: true },
         { type: 'wall', icon: PenTool, label: 'Draw Wall', action: () => onToolSelect('wall') },
+        { type: 'divider', icon: Scissors, label: 'Room Divider', action: () => onToolSelect('divider') },
         { type: 'door', icon: DoorOpen, label: 'Door', draggable: true },
         { type: 'window', icon: AppWindow, label: 'Window', draggable: true },
         { type: 'opening', icon: Square, label: 'Void', draggable: true },

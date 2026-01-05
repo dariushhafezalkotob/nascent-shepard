@@ -42,10 +42,20 @@ export const useCanvas = () => {
         mode: EditorState['mode'];
         pan: Point;
         zoom: number;
+        backgroundImage: HTMLImageElement | null;
+        backgroundSize: { width: number, height: number } | null; // Just original dimensions
+        backgroundOffset: Point; // Manual position adjustment
+        backgroundScale: number; // Manual scale adjustment
+        backgroundLocked: boolean; // Prevent accidental edits
     }>({
         mode: 'select',
         pan: { x: 0, y: 0 },
         zoom: 50, // 50 pixels = 1 meter
+        backgroundImage: null,
+        backgroundSize: null,
+        backgroundOffset: { x: 0, y: 0 },
+        backgroundScale: 1,
+        backgroundLocked: false
     });
 
     // Merged State
@@ -60,6 +70,7 @@ export const useCanvas = () => {
     const [movingWallId, setMovingWallId] = useState<string | null>(null);
     const [movingObjectId, setMovingObjectId] = useState<string | null>(null);
     const [movingFurnitureId, setMovingFurnitureId] = useState<string | null>(null);
+    const [movingLabelId, setMovingLabelId] = useState<string | null>(null);
     const [bendingWallId, setBendingWallId] = useState<string | null>(null);
     const [dragOffset, setDragOffset] = useState<Point | null>(null);
 
@@ -97,6 +108,26 @@ export const useCanvas = () => {
         // Scaled Font Metrics
         const fontScale = viewState.zoom / 50;
 
+        // Draw Background Image (Trace Reference)
+        if (viewState.backgroundImage && viewState.backgroundSize) {
+            const { width, height } = viewState.backgroundSize;
+
+            // Calculate screen coordinates for the image
+            // Position = (Offset) * Zoom
+            // Size = Original * Scale * Zoom
+            const bgX = viewState.backgroundOffset.x;
+            const bgY = viewState.backgroundOffset.y;
+
+            const screenStart = worldToScreen({ x: bgX, y: bgY });
+            const screenWidth = width * viewState.backgroundScale * viewState.zoom;
+            const screenHeight = height * viewState.backgroundScale * viewState.zoom;
+
+            ctx.save();
+            ctx.globalAlpha = 0.5;
+            ctx.drawImage(viewState.backgroundImage, screenStart.x, screenStart.y, screenWidth, screenHeight);
+            ctx.restore();
+        }
+
         // Draw Rooms (Area & Names)
         rooms.forEach(room => {
             const screenCentroid = worldToScreen(room.centroid);
@@ -105,19 +136,29 @@ export const useCanvas = () => {
             const matchingLabel = state.labels.find(l => isPointInPolygon({ x: l.x, y: l.y }, room.path));
             const roomName = matchingLabel ? matchingLabel.text : "Room";
 
+            const isLabelSelected = state.selectedId === matchingLabel?.id;
+
             // Draw Area Text & Name
             ctx.save();
-            ctx.fillStyle = '#666666';
+            ctx.fillStyle = isLabelSelected ? '#3b82f6' : '#666666';
             ctx.font = 'bold 12px sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
+
+            // Selection Circle/Glow
+            if (isLabelSelected) {
+                ctx.beginPath();
+                ctx.arc(screenCentroid.x, screenCentroid.y, 40 * fontScale, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(59, 130, 246, 0.1)';
+                ctx.fill();
+            }
 
             // Scaled Font Sizes
             const nameSize = Math.max(8, 16 * fontScale);
             const areaSize = Math.max(7, 14 * fontScale);
 
             // Name
-            ctx.fillStyle = '#000000';
+            ctx.fillStyle = isLabelSelected ? '#2563eb' : '#000000';
             ctx.font = `bold ${nameSize}px sans-serif`;
             ctx.fillText(roomName, screenCentroid.x, screenCentroid.y - (10 * fontScale));
 
@@ -780,11 +821,11 @@ export const useCanvas = () => {
             return;
         }
 
-        if (viewState.mode === 'select') {
-            let hitId: string | null = null;
-            let isEndpoint = false;
+        let hitId: string | null = null;
+        let isEndpoint = false;
 
-            // Check Furniture (Reverse loop to pick top-most item)
+        if (viewState.mode === 'select') {
+            // 1. Check Furniture (Reverse loop to pick top-most item)
             const reversedFurniture = [...state.furniture].reverse();
             for (const item of reversedFurniture) {
                 const lp = worldPos;
@@ -798,12 +839,11 @@ export const useCanvas = () => {
                     hitId = item.id;
                     setMovingFurnitureId(item.id);
                     setDragOffset({ x: dx, y: dy });
-                    snapshot();
                     break;
                 }
             }
 
-            // Check objects
+            // 2. Check Objects
             if (!hitId) {
                 for (const obj of state.objects) {
                     const wall = state.walls.find(w => w.id === obj.wallId);
@@ -816,109 +856,147 @@ export const useCanvas = () => {
                         if (distance(worldPos, objPos) < obj.width / 2) {
                             hitId = obj.id;
                             setMovingObjectId(obj.id);
-                            snapshot();
                             break;
                         }
                     }
                 }
+            }
 
-                // Check walls (Endpoints first for resizing)
+            // 3. Check Labels/Rooms (Priority over walls)
+            if (!hitId) {
+                const labelThreshold = 30 / viewState.zoom;
+                for (const label of state.labels) {
+                    if (distance(worldPos, { x: label.x, y: label.y }) < labelThreshold) {
+                        hitId = label.id;
+                        setMovingLabelId(label.id);
+                        setDragOffset({ x: worldPos.x - label.x, y: worldPos.y - label.y });
+                        break;
+                    }
+                }
+
                 if (!hitId) {
-                    const threshold = 10 / viewState.zoom;
-                    for (const wall of state.walls) {
-                        if (distance(worldPos, wall.start) < threshold) {
-                            hitId = wall.id;
-                            setMovingWallId(wall.id);
-                            setDragOffset({ x: 'start' as any, y: 0 });
-                            isEndpoint = true;
-                            snapshot();
-                            break;
-                        }
-                        if (distance(worldPos, wall.end) < threshold) {
-                            hitId = wall.id;
-                            setMovingWallId(wall.id);
-                            setDragOffset({ x: 'end' as any, y: 0 });
-                            isEndpoint = true;
-                            snapshot();
+                    for (const room of rooms) {
+                        if (isPointInPolygon(worldPos, room.path)) {
+                            // Find matching label
+                            const existingLabel = state.labels.find(l => isPointInPolygon({ x: l.x, y: l.y }, room.path));
+                            if (existingLabel) {
+                                hitId = existingLabel.id;
+                                setMovingLabelId(existingLabel.id);
+                                setDragOffset({ x: worldPos.x - existingLabel.x, y: worldPos.y - existingLabel.y });
+                            } else {
+                                // AUTO-CREATE LABEL
+                                const newId = uuidv4();
+                                const newLabel: RoomLabel = {
+                                    id: newId,
+                                    text: "New Room",
+                                    x: room.centroid.x,
+                                    y: room.centroid.y
+                                };
+                                setHistory(prev => ({
+                                    ...prev,
+                                    labels: [...prev.labels, newLabel],
+                                    selectedId: newId
+                                }), false);
+                                hitId = newId;
+                                setMovingLabelId(newId);
+                                setDragOffset({ x: 0, y: 0 });
+                            }
                             break;
                         }
                     }
                 }
+            }
 
-                // Check curvature handles (Priority over body)
-                if (!hitId) {
-                    const threshold = 15 / viewState.zoom;
-                    for (const wall of state.walls) {
-                        if (state.selectedId === wall.id) {
-                            // Calculate current handle position
-                            const midX = (wall.start.x + wall.end.x) / 2;
-                            const midY = (wall.start.y + wall.end.y) / 2;
-                            const dx = wall.end.x - wall.start.x;
-                            const dy = wall.end.y - wall.start.y;
-                            const dist = Math.sqrt(dx * dx + dy * dy);
-                            if (dist < 0.001) continue;
-                            const nx = -dy / dist;
-                            const ny = dx / dist;
-                            const bulge = wall.curvature || 0;
-                            const sagitta = bulge * (dist / 2);
-                            const controlPoint = {
-                                x: midX + nx * sagitta,
-                                y: midY + ny * sagitta
-                            };
+            // 4. Check Wall Endpoints
+            if (!hitId) {
+                const threshold = 10 / viewState.zoom;
+                for (const wall of state.walls) {
+                    if (distance(worldPos, wall.start) < threshold) {
+                        hitId = wall.id;
+                        setMovingWallId(wall.id);
+                        setDragOffset({ x: 'start' as any, y: 0 });
+                        isEndpoint = true;
+                        snapshot();
+                        break;
+                    }
+                    if (distance(worldPos, wall.end) < threshold) {
+                        hitId = wall.id;
+                        setMovingWallId(wall.id);
+                        setDragOffset({ x: 'end' as any, y: 0 });
+                        isEndpoint = true;
+                        snapshot();
+                        break;
+                    }
+                }
+            }
 
-                            if (distance(worldPos, controlPoint) < threshold) {
-                                hitId = wall.id;
-                                setBendingWallId(wall.id);
-                                snapshot();
+            // 5. Check Curvature Handles
+            if (!hitId) {
+                const threshold = 15 / viewState.zoom;
+                for (const wall of state.walls) {
+                    if (state.selectedId === wall.id) {
+                        const midX = (wall.start.x + wall.end.x) / 2;
+                        const midY = (wall.start.y + wall.end.y) / 2;
+                        const dx = wall.end.x - wall.start.x;
+                        const dy = wall.end.y - wall.start.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        if (dist < 0.001) continue;
+                        const nx = -dy / dist;
+                        const ny = dx / dist;
+                        const bulge = wall.curvature || 0;
+                        const sagitta = bulge * (dist / 2);
+                        const controlPoint = { x: midX + nx * sagitta, y: midY + ny * sagitta };
+
+                        if (distance(worldPos, controlPoint) < threshold) {
+                            hitId = wall.id;
+                            setBendingWallId(wall.id);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 6. Check Wall Bodies
+            if (!hitId && !isEndpoint) {
+                const bodyThreshold = 5 / viewState.zoom;
+                for (const wall of state.walls) {
+                    let isHit = false;
+                    if (wall.curvature && Math.abs(wall.curvature) > 0.001) {
+                        const segments = getWallSegments(wall);
+                        for (const seg of segments) {
+                            if (pointToSegmentDistance(worldPos, seg.start, seg.end) < wall.thickness / 2 + bodyThreshold) {
+                                isHit = true;
                                 break;
                             }
                         }
-                    }
-                }
-
-                // Check wall bodies (Curve-aware)
-                if (!hitId && !isEndpoint) {
-                    const bodyThreshold = 5 / viewState.zoom;
-                    for (const wall of state.walls) {
-                        let isHit = false;
-                        if (wall.curvature && Math.abs(wall.curvature) > 0.001) {
-                            const segments = getWallSegments(wall);
-                            for (const seg of segments) {
-                                if (pointToSegmentDistance(worldPos, seg.start, seg.end) < wall.thickness / 2 + bodyThreshold) {
-                                    isHit = true;
-                                    break;
-                                }
-                            }
-                        } else {
-                            if (pointToSegmentDistance(worldPos, wall.start, wall.end) < wall.thickness / 2 + bodyThreshold) {
-                                isHit = true;
-                            }
-                        }
-
-                        if (isHit) {
-                            hitId = wall.id;
-                            setMovingWallId(wall.id);
-                            setDragOffset(worldPos);
-                            snapshot();
-                            break;
+                    } else {
+                        if (pointToSegmentDistance(worldPos, wall.start, wall.end) < wall.thickness / 2 + bodyThreshold) {
+                            isHit = true;
                         }
                     }
-                }
 
-
-                // 6. Update Selection State (Unified)
-                if (state.selectedId !== hitId) {
-                    setHistory(prev => ({ ...prev, selectedId: hitId }), false);
+                    if (isHit) {
+                        hitId = wall.id;
+                        setMovingWallId(wall.id);
+                        setDragOffset(worldPos);
+                        break;
+                    }
                 }
             }
-        } else if (viewState.mode === 'wall') {
+
+            if (state.selectedId !== hitId) {
+                setHistory(prev => ({ ...prev, selectedId: hitId }), false);
+            }
+        } else if (viewState.mode === 'wall' || viewState.mode === 'divider') {
             const startPos = snapToVertex(worldPos);
+            const isVirtual = viewState.mode === 'divider';
             const newWall: Wall = {
                 id: uuidv4(),
                 start: startPos,
                 end: startPos,
-                thickness: 0.2,
-                height: historyState.globalWallHeight
+                thickness: isVirtual ? 0.05 : 0.2,
+                height: historyState.globalWallHeight,
+                isVirtual
             };
             setHistory(prev => ({
                 ...prev,
@@ -927,7 +1005,7 @@ export const useCanvas = () => {
             }), false);
             setActiveWallId(newWall.id);
         }
-    }, [viewState.mode, viewState.zoom, state.furniture, state.objects, state.walls, state.selectedId, screenToWorld, setHistory, snapshot]);
+    }, [viewState.mode, viewState.zoom, state.furniture, state.objects, state.walls, state.labels, state.selectedId, rooms, screenToWorld, setHistory, snapshot, historyState.globalWallHeight]);
 
     const handleMouseMove = useCallback((e: React.MouseEvent) => {
         const canvas = canvasRef.current;
@@ -998,12 +1076,21 @@ export const useCanvas = () => {
                 if (!item || !dragOffset) return prev;
                 let rawX = worldPos.x - dragOffset.x;
                 let rawY = worldPos.y - dragOffset.y;
-
                 const alignedItem = alignFurnitureToWall(item, { x: rawX, y: rawY });
-
                 return {
                     ...prev,
                     furniture: prev.furniture.map(f => f.id === movingFurnitureId ? { ...f, x: alignedItem.x, y: alignedItem.y, rotation: alignedItem.rotation } : f)
+                };
+            }, true);
+        }
+
+        if (movingLabelId) {
+            setHistory(prev => {
+                const label = prev.labels.find(l => l.id === movingLabelId);
+                if (!label || !dragOffset) return prev;
+                return {
+                    ...prev,
+                    labels: prev.labels.map(l => l.id === movingLabelId ? { ...l, x: worldPos.x - dragOffset.x, y: worldPos.y - dragOffset.y } : l)
                 };
             }, true);
         }
@@ -1098,7 +1185,7 @@ export const useCanvas = () => {
                 setDragOffset(currentPos);
             }
         }
-    }, [screenToWorld, isDragging, dragStart, activeWallId, movingObjectId, movingFurnitureId, movingWallId, dragOffset, setHistory]);
+    }, [screenToWorld, isDragging, dragStart, bendingWallId, activeWallId, movingObjectId, movingFurnitureId, movingLabelId, movingWallId, dragOffset, state.walls, state.furniture, state.objects, state.labels, setHistory, alignFurnitureToWall]);
 
     const handleMouseUp = useCallback(() => {
         if (activeWallId) {
@@ -1110,6 +1197,7 @@ export const useCanvas = () => {
         setMovingWallId(null);
         setMovingObjectId(null);
         setMovingFurnitureId(null);
+        setMovingLabelId(null);
         setBendingWallId(null);
         setDragOffset(null);
     }, [activeWallId]);
@@ -1176,11 +1264,10 @@ export const useCanvas = () => {
                 }), false);
             }
         }
-    }, [screenToWorld, state.walls, snapshot, setHistory]);
+    }, [screenToWorld, snapshot, setHistory, getClosestWall, alignFurnitureToWall]);
 
     const deleteSelection = useCallback(() => {
         if (!state.selectedId) return;
-        snapshot();
         setHistory(prev => ({
             ...prev,
             walls: prev.walls.filter(w => w.id !== state.selectedId),
@@ -1189,7 +1276,7 @@ export const useCanvas = () => {
             labels: prev.labels.filter(l => l.id !== state.selectedId),
             selectedId: null
         }), false);
-    }, [state.selectedId, state.walls, snapshot, setHistory]);
+    }, [state.selectedId, setHistory]);
 
     const zoomIn = useCallback(() => setViewState(prev => ({ ...prev, zoom: Math.min(200, prev.zoom * 1.2) })), []);
     const zoomOut = useCallback(() => setViewState(prev => ({ ...prev, zoom: Math.max(10, prev.zoom / 1.2) })), []);
@@ -1208,7 +1295,12 @@ export const useCanvas = () => {
         setViewState({
             mode: 'select',
             pan: { x: 0, y: 0 },
-            zoom: 50
+            zoom: 50,
+            backgroundImage: null,
+            backgroundSize: null,
+            backgroundOffset: { x: 0, y: 0 },
+            backgroundScale: 1,
+            backgroundLocked: false
         });
     }, [clearHistory]);
 
@@ -1233,6 +1325,15 @@ export const useCanvas = () => {
         zoomIn,
         zoomOut,
         fitToView,
-        resetCanvas
+        resetCanvas,
+        setBackground: (img: HTMLImageElement, width: number, height: number, x: number = 0, y: number = 0) => {
+            setViewState(prev => ({
+                ...prev,
+                backgroundImage: img,
+                backgroundSize: { width, height },
+                backgroundOffset: { x, y },
+                backgroundScale: prev.backgroundScale || 0.05 // Default scale guess (approx 20px per meter)
+            }));
+        }
     };
 };

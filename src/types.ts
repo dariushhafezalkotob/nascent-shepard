@@ -95,7 +95,7 @@ export interface EditorState {
     furniture: Furniture[];
     labels: RoomLabel[];
     selectedId: string | null;
-    mode: 'select' | 'wall' | 'door' | 'window' | 'opening';
+    mode: 'select' | 'wall' | 'divider' | 'door' | 'window' | 'opening';
     pan: Point;
     zoom: number;
     globalWallHeight?: number; // Global height in meters (2.5 - 3.3)
@@ -103,4 +103,9 @@ export interface EditorState {
     decorationStyle?: string;
     decorationBudget?: number;
     itemBudgetMap?: Record<string, number>;
+    backgroundImage?: HTMLImageElement | null;
+    backgroundSize?: { width: number, height: number } | null;
+    backgroundOffset?: Point;
+    backgroundScale?: number;
+    backgroundLocked?: boolean;
 }

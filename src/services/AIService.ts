@@ -49,39 +49,66 @@ TECHNICAL_SPECIFICATIONS:
 `;
 
 // 2. VISION ANALYSIS PROMPT - STEP A: STRUCTURE
-const STRUCTURAL_PROMPT = (constraints?: { landWidth: number, landDepth: number }) => `
-ACT AS A PRECISION ARCHITECTURAL SCANNER.
-Scan the floor plan image for STRUCTURE: FOOTPRINT, ROOM BOUNDARIES, and OPENINGS.
-${constraints ? `CONTEXT: This building is designed for a site of ${constraints.landWidth}m x ${constraints.landDepth}m.` : ''}
-
-TOPOLOGICAL CONTINUITY RULES:
-- SHARED VERTICES: Adjacent rooms MUST share the EXACT SAME coordinates for their common boundary. NO GAPS or "ghost corridors" are allowed between touching rooms.
-- FOOTPRINT SATURATION: INTERNAL ROOMS must collectively fill 100% of the internal building area. There should be NO empty gaps between the internal room boundaries and the external footprint walls.
-- OUTSIDE-IN LOGIC: First identify the overall building footprint, then partition it into internal spaces. 
-- PROPORTIONAL PARTITIONING: Analyze the layout as a series of subdivisions. If the long axis is divided into multiple rooms, ensure their combined length exactly matches the footprint's length.
-- WALL PRIORITY: Identify walls as continuous straight lines where possible. Do not "jump" between points; follow the structural lines.
-- CORRIDOR STANDARD: Corridors and Hallways MUST have a minimum width of 1.5m. Ensure identified corners reflect this.
-- OPENINGS/VOIDS: Identify gaps in walls without doors as "opening". Ensure they are correctly positioned as WallObjects.
-- IGNORE furniture, appliances, and cabinetry when identifying structural corners.
-
-TASKS:
-1. Identify the building footprint (exterior walls) as an ordered list of points.
-2. Identify all rooms and corridors. For each space return 'name' and 'corners' (polygon).
-3. Identify all openings (doors, windows) return 'type', 'x', 'y', 'width'.
+// 2. VISION ANALYSIS PROMPT - STEP A: STRUCTURE (OR CALIBRATION)
+// 2. VISION ANALYSIS PROMPT - STEP A: STRUCTURE (OR CALIBRATION)
+const CALIBRATION_PROMPT = (constraints?: { referenceLength?: number }) => `
+ACT AS A SCALING CALIBRATOR.
+Analyze the image to find the "Ruler Wall" (reference length: ${constraints?.referenceLength || 12}m).
+Identify its precise start and end pixel coordinates.
+Return the image dimensions in pixels.
+DO NOT IDENTIFY ANY WALLS, ROOMS, OR OPENINGS. RETURN EMPTY ARRAYS.
 
 RETURN JSON ONLY:
 {
-  "footprint": [{"x": 0, "y": 0}, ...],
+  "footprint": [], 
+  "rooms": [],
+  "openings": [],
+  "reference_pixel_coords": { "start": {"x": 100, "y": 100}, "end": {"x": 100, "y": 300} },
+  "image_width": 1000,
+  "image_height": 800
+}
+`;
+
+const STRUCTURAL_PROMPT = (constraints?: { landWidth?: number, landDepth?: number, referenceLength?: number }) => `
+ACT AS A PRECISION ARCHITECTURAL SCANNER.
+Scan the floor plan image for STRUCTURE: FOOTPRINT, ROOM BOUNDARIES, and OPENINGS.
+
+METHODOLOGY (USER-DEFINED):
+1. **SOLID SKELETON (CRITICAL)**: 
+   - IGNORE ALL DOORS AND WINDOWS initially. 
+   - Treat walls as CONTINUOUS, SOLID LINES. 
+   - If a wall has a door, DRAW THE WALL STRAIGHT THROUGH IT. Do not break the line.
+   - The result should be a solid, closed-loop geometry.
+
+2. **PIXEL-TO-METER CALIBRATION**:
+   - Identify the "Ruler Wall" (reference length: ${constraints?.referenceLength || 12}m).
+   - Internally measure its length in pixels.
+   - Calculate the Ratio: (Reference Meters) / (Reference Pixels).
+   - APPLY THIS RATIO to convert *every* other wall's pixel length into precise METERS.
+
+3. **OPENING OVERLAY**:
+   - *After* the solid walls are established, locate the doors and windows.
+   - Report their center position (x,y) and width in meters.
+   - These will be "punched out" of the solid walls later.
+
+RULES:
+- **CONTINUITY**: Walls must perfectly connect. No gaps for doors.
+- **SCALE**: All output values must be in METERS based on the calculated ratio.
+- **GRID**: Assume (0,0) is top-left.
+
+RETURN JSON ONLY:
+{
+  "footprint": [{"x": 0, "y": 0}, ...], /* Solid loop, no door gaps */
   "rooms": [
-    {
-      "name": "Room Name", 
-      "corners": [{"x": 100, "y": 100}, {"x": 200, "y": 100}, {"x": 200, "y": 200}, {"x": 100, "y": 200}]
-    }
+    { "name": "Living Room", "corners": [...] } /* Solid polygons */
   ],
   "openings": [
-    {"type": "door", "x": 150, "y": 100, "width": 80, "hinge": "right", "swing": "in"}
+    {"type": "door", "x": 1.5, "y": 0, "width": 0.9} /* Overlays on solid walls */
   ],
-  "overall_width_meters": ${constraints ? Math.max(constraints.landWidth, constraints.landDepth) : 15.0}
+  "overall_width_meters": ${constraints?.referenceLength ? '/* Calculated from pixel ratio */' : (constraints?.landWidth || 15.0)},
+  "meters_per_pixel": 0.05, /* Calculated ratio */
+  "image_width": 1000, /* Pixel width */
+  "image_height": 800
 }
 `;
 
@@ -203,11 +230,16 @@ interface VisionResponse {
     overall_width?: number;
     items?: FurnitureItem[];
     kitchen_belts?: { start: { x: number, y: number }, end: { x: number, y: number } }[];
+    meters_per_pixel?: number; // Legacy or AI calculated
+    reference_pixel_length?: number; // Legacy: For precise TS calculation
+    reference_pixel_coords?: { start: { x: number, y: number }, end: { x: number, y: number } }; // New: For Auto-Alignment
+    image_width?: number;
+    image_height?: number;
 }
 
 export class AIService {
 
-    static async generateLayout(data: any, apiKey: string): Promise<{ walls: Wall[], objects: any[], furniture: Furniture[], labels: RoomLabel[], generatedImage?: string, rawResponse?: string, dimensions?: { width: number, depth: number } }> {
+    static async generateLayout(data: any, apiKey: string): Promise<{ walls: Wall[], objects: any[], furniture: Furniture[], labels: RoomLabel[], generatedImage?: string, rawResponse?: string, dimensions?: { width: number, depth: number }, background?: { width: number, height: number, metersPerPixel: number, x: number, y: number } }> {
         console.log("Generating layout V7 (Furniture Architect)...");
 
         if (!apiKey) throw new Error("API Key required");
@@ -215,11 +247,18 @@ export class AIService {
         const genAI = new GoogleGenerativeAI(apiKey);
 
         // 1. IMPORT CASE
-        if (data.importedImage) {
-            console.log("Processing imported floor plan image...");
-            const landWidth = parseFloat(data.landWidth) || 15;
-            const landDepth = parseFloat(data.landDepth) || 20;
-            return this.analyzeImportedImage(data.importedImage, apiKey, { landWidth, landDepth, targetArea: landWidth * landDepth });
+        if (data.mode === 'import' && data.importedImage) {
+            console.log("Processing imported floor plan image with referential scaling...");
+            const landWidth = parseFloat(data.landWidth);
+            const landDepth = parseFloat(data.landDepth);
+            const referenceLength = data.referenceLength;
+
+            return this.analyzeImportedImage(data.importedImage, apiKey, {
+                landWidth: isNaN(landWidth) ? undefined : landWidth,
+                landDepth: isNaN(landDepth) ? undefined : landDepth,
+                targetArea: (isNaN(landWidth) || isNaN(landDepth)) ? undefined : landWidth * landDepth,
+                referenceLength: referenceLength
+            });
         }
 
         // 2. GENERATION CASE
@@ -445,7 +484,7 @@ export class AIService {
         }
     }
 
-    static async analyzeImportedImage(base64Image: string, apiKey: string, constraints?: { landWidth: number, landDepth: number, targetArea: number, projectType?: string }): Promise<{ walls: Wall[], objects: any[], furniture: Furniture[], labels: RoomLabel[], generatedImage?: string, rawResponse?: string, dimensions?: { width: number, depth: number } }> {
+    static async analyzeImportedImage(base64Image: string, apiKey: string, constraints?: { landWidth?: number, landDepth?: number, targetArea?: number, projectType?: string, referenceLength?: number }): Promise<{ walls: Wall[], objects: any[], furniture: Furniture[], labels: RoomLabel[], generatedImage?: string, rawResponse?: string, dimensions?: { width: number, depth: number }, background?: { width: number, height: number, metersPerPixel: number, x: number, y: number } }> {
         if (!apiKey) throw new Error("API Key required");
         const genAI = new GoogleGenerativeAI(apiKey);
         const visionModel = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
@@ -467,13 +506,16 @@ export class AIService {
         return this.performVisionAnalysis(base64Image, visionModel, constraints);
     }
 
-    private static async performVisionAnalysis(base64Image: string, visionModel: any, constraints?: { landWidth: number, landDepth: number, targetArea: number, projectType?: string }) {
+    private static async performVisionAnalysis(base64Image: string, visionModel: any, constraints?: { landWidth?: number, landDepth?: number, targetArea?: number, projectType?: string, referenceLength?: number }) {
         console.log("Vision Analysis Started...");
         try {
-            // STEP 2A: STRUCTURAL SCAN
+            // STEP 2A: STRUCTURAL SCAN (OR CALIBRATION ONLY)
+            // Use CALIBRATION_PROMPT if referenceLength is provided (Import Mode) to skip geometry generation
+            const promptToUse = constraints?.referenceLength ? CALIBRATION_PROMPT(constraints) : STRUCTURAL_PROMPT(constraints);
+
             const structuralResp = await this.retryWithBackoff(async () => {
                 return await visionModel.generateContent([
-                    STRUCTURAL_PROMPT(constraints),
+                    promptToUse,
                     {
                         inlineData: {
                             data: base64Image!,
@@ -532,14 +574,76 @@ export class AIService {
 
             console.log(`>>> FINAL DIMENSIONS: ${finalWidth.toFixed(2)}m x ${finalDepth.toFixed(2)}m`);
 
+            let background: { width: number, height: number, metersPerPixel: number, x: number, y: number } | undefined;
+            const generatedWalls: Wall[] = [...visionResult.walls];
+
+            if (structData.image_width && structData.image_height) {
+
+                let metersPerPixel = structData.meters_per_pixel || 0.05;
+                let offsetX = 0;
+                let offsetY = 0;
+
+                // PRECISE CALIBRATION & ALIGNMENT LOGIC
+                if (constraints?.referenceLength) {
+                    let pixelLen = structData.reference_pixel_length;
+                    let refStart = { x: 0, y: 0 };
+                    let refEnd = { x: 100, y: 0 }; // Default fallback
+
+                    // If we have precise coordinates (New prompt)
+                    if (structData.reference_pixel_coords) {
+                        refStart = structData.reference_pixel_coords.start;
+                        refEnd = structData.reference_pixel_coords.end;
+                        // Calculate Euclidean distance for exact diagonal length
+                        pixelLen = Math.sqrt(Math.pow(refEnd.x - refStart.x, 2) + Math.pow(refEnd.y - refStart.y, 2));
+                    }
+
+                    if (pixelLen && pixelLen > 0) {
+                        metersPerPixel = constraints.referenceLength / pixelLen;
+                        console.log(`>>> CALIBRATION: ${constraints.referenceLength}m / ${pixelLen.toFixed(2)}px = ${metersPerPixel.toFixed(4)} m/px`);
+
+                        // ALIGNMENT:
+                        // We want the Reference Wall's START in the image to align with (0,0) in the editor.
+                        // Editor (0,0) is center? No, useCanvas sets top-left of content usually, but walls are world coords.
+                        // Let's assume (0,0) is origin.
+                        // Image Offset = TargetWorldPos - (ImagePixelPos * Scale)
+                        // TargetWorldPos = (0,0)
+                        offsetX = 0 - (refStart.x * metersPerPixel);
+                        offsetY = 0 - (refStart.y * metersPerPixel);
+
+                        // GENERATE GHOST WALL (User Requested Verification)
+                        // Create a wall starting at 0,0 and ending at where the reference wall ends (relative to start)
+                        // Delta = (End - Start) * Scale
+                        const deltaX = (refEnd.x - refStart.x) * metersPerPixel;
+                        const deltaY = (refEnd.y - refStart.y) * metersPerPixel;
+
+                        generatedWalls.push({
+                            id: 'calibration-reference-wall',
+                            start: { x: 0, y: 0 },
+                            end: { x: deltaX, y: deltaY },
+                            thickness: 0.2, // Visual thickness
+                            height: 2.8
+                        });
+                    }
+                }
+
+                background = {
+                    width: structData.image_width,
+                    height: structData.image_height,
+                    metersPerPixel: metersPerPixel,
+                    x: offsetX,
+                    y: offsetY
+                };
+            }
+
             return {
-                walls: visionResult.walls,
+                walls: generatedWalls,
                 objects: visionResult.objects,
                 furniture: visionResult.furniture,
                 labels: visionResult.labels,
                 generatedImage: base64Image,
                 rawResponse: cleanStruct + "\n" + cleanFurn,
-                dimensions: { width: finalWidth, depth: finalDepth }
+                dimensions: { width: finalWidth, depth: finalDepth },
+                background
             };
 
         } catch (e: any) {
@@ -557,7 +661,7 @@ export class AIService {
             .trim();
     }
 
-    private static convertVisionToWalls(data: VisionResponse, furnitureData: FurnitureItem[], kitchenBelts: { start: { x: number, y: number }, end: { x: number, y: number } }[], targetArea: number | null, constraints?: { landWidth: number, landDepth: number }): { walls: Wall[], objects: any[], furniture: Furniture[], labels: RoomLabel[], debugDims?: { width: number, depth: number } } {
+    private static convertVisionToWalls(data: VisionResponse, furnitureData: FurnitureItem[], kitchenBelts: { start: { x: number, y: number }, end: { x: number, y: number } }[], targetArea: number | null, constraints?: { landWidth?: number, landDepth?: number, referenceLength?: number }): { walls: Wall[], objects: any[], furniture: Furniture[], labels: RoomLabel[], debugDims?: { width: number, depth: number } } {
         const labels: RoomLabel[] = [];
         const candidates: Wall[] = [];
         const finalObjects: any[] = [];

@@ -15,7 +15,8 @@ import { DecorationSetupModal } from './DecorationSetupModal';
 import { ProductPickerPopup } from './ProductPickerPopup';
 import { distributeBudget } from '../utils/budgetDistribution';
 import { AIRenderingOverlay } from './AIRenderingOverlay';
-import type { Choice } from '../types';
+import type { Choice, Point } from '../types';
+import { Lock, Unlock, Sliders, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 
 export const Layout: React.FC = () => {
     const {
@@ -36,7 +37,8 @@ export const Layout: React.FC = () => {
         zoomIn,
         zoomOut,
         fitToView,
-        resetCanvas
+        resetCanvas,
+        setBackground
     } = useCanvas();
 
     const [activeTab, setActiveTab] = React.useState<'layout' | 'furniture' | 'surfaces' | '3d' | 'rendering'>('layout');
@@ -47,6 +49,7 @@ export const Layout: React.FC = () => {
     const [referenceDims, setReferenceDims] = React.useState<{ width: number, depth: number } | null>(null);
     const [debugJson, setDebugJson] = React.useState<string>("");
     const [apiKey, setApiKey] = React.useState<string>("");
+    const [isTracePanelMinimized, setIsTracePanelMinimized] = React.useState(false);
 
     // 1. Initial Load from Autosave
     useEffect(() => {
@@ -60,7 +63,26 @@ export const Layout: React.FC = () => {
         }
     }, [setHistory, resetCanvas]); // Only on mount
 
-    // 2. Autosave on change
+    // 3. Auto-Switch Tabs on Selection
+    useEffect(() => {
+        if (!state.selectedId) return;
+
+        // Check if Furniture
+        if (state.furniture.some(f => f.id === state.selectedId)) {
+            if (activeTab !== 'furniture') setActiveTab('furniture');
+            return;
+        }
+
+        // Check if Wall or Object
+        const isWall = state.walls.some(w => w.id === state.selectedId);
+        const isObject = state.objects.some(o => o.id === state.selectedId);
+
+        if ((isWall || isObject) && activeTab !== 'layout') {
+            setActiveTab('layout');
+        }
+    }, [state.selectedId, state.furniture, state.walls, state.objects]);
+
+    // Debounced autosave
     useEffect(() => {
         // Only autosave if the state has meaningful content OR we explicitly want to save the 'empty' state
         StorageService.autosave(state);
@@ -78,12 +100,47 @@ export const Layout: React.FC = () => {
     }, [state.furniture, state.decorationBudget, state.itemBudgetMap, setHistory]);
 
     const handleAIGenerate = async (data: any, apiKey: string) => {
+        // --- 0. DIRECT IMPORT MODE (NO AI) ---
+        if (data.mode === 'import' && data.importedImage) {
+            console.log("Direct Import Mode: Loading image as background...");
+            // Load the image purely locally for manual tracing
+            const img = new Image();
+            img.src = `data:image/png;base64,${data.importedImage}`;
+            img.onload = () => {
+                // scale = 1 means 1 pixel = 1 pixel on canvas (at 100% zoom)
+                // But canvas zoom=50 means 50px=1m.
+                // So if image is 1000px wide, and we want it to be "10 meters" wide,
+                // 10m * 50px/m = 500px on screen.
+                // We don't know the meters yet. The USER must scale it.
+                // Let's just set it to natural size and let user resize.
+                setBackground(img, img.naturalWidth, img.naturalHeight);
+            };
+            setIsAIModalOpen(false);
+            return;
+        }
+
+        // --- 1. AI GENERATION MODE ---
         try {
-            const { walls: newWalls, objects: newObjects, furniture: newFurniture, labels: newLabels, generatedImage, rawResponse, dimensions } = await AIService.generateLayout(data, apiKey);
+            const { walls: newWalls, objects: newObjects, furniture: newFurniture, labels: newLabels, generatedImage, rawResponse, dimensions, background } = await AIService.generateLayout(data, apiKey);
 
             if (generatedImage) {
                 setReferenceImage(generatedImage);
                 setReferenceDims(dimensions || null);
+
+                // If we have background scaling data (Import Mode), set it as trace background
+                if (background) {
+                    const img = new Image();
+                    img.src = `data:image/png;base64,${generatedImage}`;
+                    img.onload = () => {
+                        // Calculate width/height in meters
+                        const widthMeters = background.width * background.metersPerPixel;
+                        const heightMeters = background.height * background.metersPerPixel;
+
+                        // Set background centered at 0,0 (or match logic)
+                        // We'll place it at 0,0 for now so user can draw relative to origin
+                        setBackground(img, widthMeters, heightMeters, background.x || 0, background.y || 0); // x,y
+                    };
+                }
             }
 
             if (rawResponse) {
@@ -166,6 +223,13 @@ export const Layout: React.FC = () => {
         setHistory(prev => ({
             ...prev,
             furniture: prev.furniture.map(f => f.id === id ? { ...f, ...updates } : f)
+        }), true);
+    };
+
+    const updateLabel = (id: string, updates: any) => {
+        setHistory(prev => ({
+            ...prev,
+            labels: (prev.labels || []).map(l => l.id === id ? { ...l, ...updates } : l)
         }), true);
     };
 
@@ -307,6 +371,72 @@ export const Layout: React.FC = () => {
                             onClose={() => setHistory(prev => ({ ...prev, selectedId: null }), false)}
                         />
                     )}
+
+                    {/* MANUALLY IMPORTED BACKGROUND SETTINGS */}
+                    {state.backgroundImage && (
+                        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white rounded-lg shadow-lg border border-zinc-200 p-3 min-w-[280px] z-50">
+                            <div className="flex items-center justify-between mb-2">
+                                <h3 className="text-xs font-semibold text-zinc-900 flex items-center gap-2">
+                                    <Sliders className="w-3 h-3" /> Trace Settings
+                                </h3>
+                                <div className="flex gap-1">
+                                    <button onClick={() => setViewState(prev => ({ ...prev, backgroundLocked: !prev.backgroundLocked }))}
+                                        className={`p-1 rounded ${state.backgroundLocked ? 'bg-amber-100 text-amber-600' : 'text-zinc-400 hover:text-zinc-600'}`}
+                                        title={state.backgroundLocked ? "Unlock Background" : "Lock Background"}>
+                                        {state.backgroundLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                                    </button>
+                                    <button onClick={() => setViewState(prev => ({ ...prev, backgroundImage: null }))}
+                                        className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50"
+                                        title="Remove Background">
+                                        <Trash2 className="w-3 h-3" />
+                                    </button>
+                                    <button onClick={() => setIsTracePanelMinimized(prev => !prev)}
+                                        className="p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-zinc-50"
+                                        title={isTracePanelMinimized ? "Expand" : "Minimize"}>
+                                        {isTracePanelMinimized ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {!isTracePanelMinimized && (
+                                <div className={`space-y-3 ${state.backgroundLocked ? 'opacity-50 pointer-events-none' : ''}`}>
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-[10px] text-zinc-500 uppercase tracking-wider flex justify-between">
+                                            <span>Image Scale</span>
+                                            <span className="font-mono text-zinc-400">{state.backgroundScale?.toFixed(3)}</span>
+                                        </label>
+                                        <div className="flex items-center gap-2">
+                                            <input type="range" min="0.001" max="0.2" step="0.001"
+                                                value={state.backgroundScale || 0.05}
+                                                onChange={(e) => setViewState(prev => ({ ...prev, backgroundScale: parseFloat(e.target.value) }))}
+                                                className="flex-1 accent-zinc-900 cursor-pointer" />
+                                        </div>
+                                        <p className="text-[9px] text-zinc-400 leading-tight">Drag slider until your 12m wall matches grid lines (1 large square = 1m).</p>
+                                    </div>
+
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-[10px] text-zinc-500 uppercase tracking-wider">Position Offset</label>
+                                        <div className="flex gap-2">
+                                            <div className="flex items-center gap-1 flex-1 border rounded px-1">
+                                                <span className="text-[10px] text-zinc-400 font-mono">X</span>
+                                                <input type="number" step="0.1"
+                                                    value={state.backgroundOffset?.x || 0}
+                                                    onChange={(e) => setViewState(prev => ({ ...prev, backgroundOffset: { ...((prev.backgroundOffset || { y: 0 }) as Point), x: parseFloat(e.target.value) } }))}
+                                                    className="w-full h-6 text-xs outline-none bg-transparent" />
+                                            </div>
+                                            <div className="flex items-center gap-1 flex-1 border rounded px-1">
+                                                <span className="text-[10px] text-zinc-400 font-mono">Y</span>
+                                                <input type="number" step="0.1"
+                                                    value={state.backgroundOffset?.y || 0}
+                                                    onChange={(e) => setViewState(prev => ({ ...prev, backgroundOffset: { ...((prev.backgroundOffset || { x: 0 }) as Point), y: parseFloat(e.target.value) } }))}
+                                                    className="w-full h-6 text-xs outline-none bg-transparent" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 <BottomBar
@@ -334,9 +464,11 @@ export const Layout: React.FC = () => {
                     walls={state.walls}
                     objects={state.objects}
                     furniture={state.furniture}
+                    labels={state.labels}
                     updateObject={updateObject}
                     updateWall={updateWall}
                     updateFurniture={updateFurniture}
+                    updateLabel={updateLabel}
                     snapshot={snapshot}
                     onDelete={deleteSelection}
                     globalWallHeight={state.globalWallHeight ?? 2.8}

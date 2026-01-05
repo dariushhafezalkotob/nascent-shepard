@@ -1,6 +1,6 @@
 import React from 'react';
-import type { Wall, WallObject, Furniture } from '../types';
-import { Ruler, ArrowUpFromLine, Info, Box, Layers, Settings2, RotateCcw, Type, FlipHorizontal, FlipVertical, RotateCw, Trash2, Sparkles, Loader2, Image as ImageIcon } from 'lucide-react';
+import type { Wall, WallObject, Furniture, RoomLabel } from '../types';
+import { Ruler, ArrowUpFromLine, Info, Box, Layers, Settings2, RotateCcw, Type, FlipHorizontal, FlipVertical, RotateCw, Trash2, Sparkles, Loader2, Image as ImageIcon, Type as TypeIcon } from 'lucide-react';
 import { AIService } from '../services/AIService';
 
 interface RightSidebarProps {
@@ -8,9 +8,11 @@ interface RightSidebarProps {
     walls: Wall[];
     objects: WallObject[];
     furniture: Furniture[];
+    labels: RoomLabel[];
     updateObject: (id: string, updates: Partial<WallObject>) => void;
     updateWall: (id: string, updates: Partial<Wall>) => void;
     updateFurniture: (id: string, updates: Partial<Furniture>) => void;
+    updateLabel: (id: string, updates: Partial<RoomLabel>) => void;
     snapshot: () => void;
     onDelete: () => void;
     globalWallHeight: number;
@@ -23,9 +25,11 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     walls,
     objects,
     furniture,
+    labels,
     updateObject,
     updateWall,
     updateFurniture,
+    updateLabel,
     snapshot,
     onDelete,
     globalWallHeight,
@@ -35,6 +39,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     const selectedWall = walls.find((w) => w.id === selectedId);
     const selectedObject = objects.find((o) => o.id === selectedId);
     const selectedFurniture = furniture.find((f) => f.id === selectedId);
+    const selectedLabel = labels.find((l) => l.id === selectedId);
 
     const [modelingId, setModelingId] = React.useState<string | null>(null);
 
@@ -92,13 +97,36 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
             <div className="px-6 py-4 border-b border-zinc-200 bg-zinc-50">
                 <h2 className="font-semibold text-sm uppercase tracking-wider text-zinc-500 flex items-center gap-2">
                     <Settings2 size={16} />
-                    {selectedWall ? 'Wall Properties' : selectedObject ? 'Object Properties' : selectedFurniture ? 'Furniture Properties' : 'Properties'}
+                    {selectedWall ? 'Wall Properties' : selectedObject ? 'Object Properties' : selectedFurniture ? 'Furniture Properties' : selectedLabel ? 'Room Properties' : 'Properties'}
                 </h2>
             </div>
 
             <div className="p-6 space-y-8">
                 {selectedWall && (
                     <>
+                        <div className="space-y-4">
+                            <h3 className="text-xs font-bold text-zinc-900 uppercase tracking-wide flex items-center gap-2">
+                                <Layers size={14} /> Type
+                            </h3>
+                            <button
+                                onClick={() => {
+                                    snapshot();
+                                    updateWall(selectedWall.id, { isVirtual: !selectedWall.isVirtual, thickness: !selectedWall.isVirtual ? 0.05 : 0.2 });
+                                }}
+                                className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all duration-200 ${selectedWall.isVirtual
+                                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm'
+                                    : 'bg-white border-zinc-200 text-zinc-600 hover:border-black'}`}
+                            >
+                                <div className="flex flex-col items-start text-left">
+                                    <span className="text-xs font-bold uppercase tracking-tight">Room Divider</span>
+                                    <span className="text-[10px] opacity-70">Invisible in 3D view</span>
+                                </div>
+                                <div className={`w-8 h-4 rounded-full relative transition-colors ${selectedWall.isVirtual ? 'bg-indigo-600' : 'bg-zinc-200'}`}>
+                                    <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${selectedWall.isVirtual ? 'right-0.5' : 'left-0.5'}`} />
+                                </div>
+                            </button>
+                        </div>
+
                         <div className="space-y-4">
                             <h3 className="text-xs font-bold text-zinc-900 uppercase tracking-wide flex items-center gap-2">
                                 <Box size={14} /> Dimensions
@@ -472,6 +500,39 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                                 <Trash2 size={16} /> Delete Item
                             </button>
                         </div>
+                    </>
+                )}
+
+                {selectedLabel && (
+                    <>
+                        <div className="space-y-4">
+                            <h3 className="text-xs font-bold text-zinc-900 uppercase tracking-wide flex items-center gap-2">
+                                <TypeIcon size={14} /> Room Label
+                            </h3>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-semibold text-zinc-500 uppercase">Room Name</label>
+                                <input
+                                    type="text"
+                                    value={selectedLabel.text}
+                                    onChange={(e) => updateLabel(selectedLabel.id, { text: e.target.value })}
+                                    onFocus={snapshot}
+                                    placeholder="Enter room name..."
+                                    className="w-full px-3 py-2 bg-zinc-100 border border-zinc-200 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="pt-8 border-t border-zinc-200">
+                            <button
+                                onClick={onDelete}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-sm font-semibold transition-colors shadow-sm"
+                            >
+                                <Trash2 size={16} /> Delete Label
+                            </button>
+                        </div>
+                        <p className="text-[10px] text-zinc-400 italic text-center mt-2">
+                            Labels can be dragged on the canvas to reposition them.
+                        </p>
                     </>
                 )}
             </div>

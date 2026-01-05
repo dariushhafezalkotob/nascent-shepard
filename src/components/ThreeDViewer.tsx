@@ -3,8 +3,13 @@ import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera, Grid, ContactShadows, Environment, Text } from '@react-three/drei';
 import { EffectComposer, N8AO } from '@react-three/postprocessing';
 import * as THREE from 'three';
+// @ts-ignore
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib';
 import { Settings2, ArrowUpFromLine, Home } from 'lucide-react';
+
+if (typeof window !== 'undefined') {
+    RectAreaLightUniformsLib.init();
+}
 import { detectRooms } from '../utils/roomDetection';
 import type { Wall, Furniture, WallObject, ModelRecipe } from '../types';
 import { SURFACE_MATERIALS } from '../constants/SurfaceMaterials';
@@ -853,9 +858,26 @@ const DoorModel: React.FC<{ width: number; height: number; thickness: number; hi
     );
 };
 
-const WindowModel: React.FC<{ width: number; height: number; thickness: number; lightIntensity?: number }> = ({ width, height, thickness, lightIntensity = 1.0 }) => {
+const WindowModel: React.FC<{
+    width: number;
+    height: number;
+    thickness: number;
+    areaIntensity?: number;
+    spotIntensity?: number;
+}> = ({ width, height, thickness, areaIntensity = 0.1, spotIntensity = 0.1 }) => {
     const frameWidth = 0.06;
     const vMullionCount = Math.max(1, Math.floor(width / 1.0));
+
+    // Targeting handles
+    const areaLightRef = React.useRef<THREE.RectAreaLight>(null!);
+    const spotRef = React.useRef<THREE.SpotLight>(null!);
+    const targetRef = React.useRef<THREE.Object3D>(null!);
+
+    React.useLayoutEffect(() => {
+        if (spotRef.current && targetRef.current) {
+            spotRef.current.target = targetRef.current;
+        }
+    }, []);
 
     return (
         <group>
@@ -886,36 +908,40 @@ const WindowModel: React.FC<{ width: number; height: number; thickness: number; 
                 </mesh>
             ))}
 
-            {/* Inward Lighting (RectAreaLight + SpotLight for Shadows) */}
+            {/* Area Light */}
             <rectAreaLight
+                ref={areaLightRef}
                 width={width}
                 height={height}
-                intensity={lightIntensity * 15}
+                intensity={areaIntensity * 15}
                 color="#e0f2fe"
                 position={[0, height / 2, thickness / 2 + 0.05]}
                 rotation={[0, Math.PI, 0]} // Face Inward
             />
 
+            {/* Null object outside the window to act as the spotlight target */}
+            <object3D ref={targetRef} position={[0, height / 2, 5]} />
+
             {/* Companion SpotLight for Shadow Casting */}
-            <spotLight
-                position={[0, height / 2, thickness / 2 + 0.1]}
-                angle={0.6}
-                penumbra={0.5}
-                intensity={lightIntensity * 60}
-                distance={20}
-                castShadow
-                shadow-mapSize={[1024, 1024]}
-                shadow-bias={-0.0001}
-                color="#e0f2fe"
-            >
-                {/* Direct the light inward */}
-                <object3D attach="target" position={[0, 0, -5]} />
-            </spotLight>
+            {/* Using a group and null-object target allows for precise angle control */}
+            <group position={[0, height / 2, 0.01]} rotation={[0, 0.5 * Math.PI, 0]}>
+                <spotLight
+                    ref={spotRef}
+                    angle={1.5}
+                    penumbra={0.5}
+                    intensity={spotIntensity * 60}
+                    distance={5}
+                    castShadow
+                    shadow-mapSize={[1024, 1024]}
+                    shadow-bias={-0.0001}
+                    color="#e0f2fe"
+                />
+            </group>
         </group>
     );
 };
 
-const WallObjectMesh: React.FC<{ obj: WallObject; wall: Wall; lightIntensity?: number }> = ({ obj, wall, lightIntensity }) => {
+const WallObjectMesh: React.FC<{ obj: WallObject; wall: Wall; areaIntensity: number; spotIntensity: number }> = ({ obj, wall, areaIntensity, spotIntensity }) => {
     const dx = wall.end.x - wall.start.x;
     const dy = wall.end.y - wall.start.y;
     const wallAngle = Math.atan2(dy, dx);
@@ -946,7 +972,8 @@ const WallObjectMesh: React.FC<{ obj: WallObject; wall: Wall; lightIntensity?: n
                     width={obj.width}
                     height={finalHeight}
                     thickness={wall.thickness}
-                    lightIntensity={lightIntensity}
+                    areaIntensity={areaIntensity}
+                    spotIntensity={spotIntensity}
                 />
             )}
         </group>
@@ -1355,7 +1382,8 @@ const MaterialDropHandler: React.FC<{
 
 export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furniture, globalWallHeight, onUpdateWallHeight, onApplyMaterial, floorMaterials, hideSettings }) => {
     const [showRoof, setShowRoof] = React.useState(false);
-    const [lightIntensity, setLightIntensity] = React.useState(1.0);
+    const [areaIntensity, setAreaIntensity] = React.useState(0.1);
+    const [spotIntensity, setSpotIntensity] = React.useState(0.1);
     const [ambientIntensity, setAmbientIntensity] = React.useState(0.1);
     const containerRef = React.useRef<HTMLDivElement>(null);
 
@@ -1395,7 +1423,7 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furn
                     <div className="space-y-4">
                         <div className="space-y-2">
                             <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-2">
-                                Lamp Intensity
+                                Area Light Intensity
                             </label>
                             <div className="flex items-center gap-3">
                                 <input
@@ -1403,12 +1431,32 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furn
                                     min="0"
                                     max="4"
                                     step="0.1"
-                                    value={lightIntensity}
-                                    onChange={(e) => setLightIntensity(Number(e.target.value))}
+                                    value={areaIntensity}
+                                    onChange={(e) => setAreaIntensity(Number(e.target.value))}
                                     className="flex-1 accent-orange-500 cursor-pointer h-1.5 bg-zinc-200 rounded-lg appearance-none"
                                 />
                                 <div className="w-12 text-center text-xs font-bold bg-orange-50 text-orange-700 py-1 rounded border border-orange-100">
-                                    {lightIntensity.toFixed(1)}
+                                    {areaIntensity.toFixed(1)}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-2">
+                                Spotlight Intensity
+                            </label>
+                            <div className="flex items-center gap-3">
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="4"
+                                    step="0.1"
+                                    value={spotIntensity}
+                                    onChange={(e) => setSpotIntensity(Number(e.target.value))}
+                                    className="flex-1 accent-amber-500 cursor-pointer h-1.5 bg-zinc-200 rounded-lg appearance-none"
+                                />
+                                <div className="w-12 text-center text-xs font-bold bg-amber-50 text-amber-700 py-1 rounded border border-amber-100">
+                                    {spotIntensity.toFixed(1)}
                                 </div>
                             </div>
                         </div>
@@ -1486,7 +1534,7 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furn
                 <OrbitControls makeDefault minPolarAngle={0} maxPolarAngle={Math.PI / 2.1} />
 
                 <Suspense fallback={null}>
-                    <Environment preset="city" />
+                    <Environment preset="city" environmentIntensity={ambientIntensity} />
 
                     <group>
                         {/* General Base Floor (Lowered to avoid overlap) */}
@@ -1590,11 +1638,11 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furn
                         {objects.filter(o => o.type !== 'opening').map(obj => {
                             const parentWall = walls.find(w => w.id === obj.wallId);
                             if (!parentWall) return null;
-                            return <WallObjectMesh key={obj.id} obj={obj} wall={parentWall} lightIntensity={lightIntensity} />;
+                            return <WallObjectMesh key={obj.id} obj={obj} wall={parentWall} areaIntensity={areaIntensity} spotIntensity={spotIntensity} />;
                         })}
 
                         {/* Furniture */}
-                        {furniture.map(f => <FurnitureMesh key={f.id} item={f} lightIntensity={lightIntensity} />)}
+                        {furniture.map(f => <FurnitureMesh key={f.id} item={f} lightIntensity={spotIntensity} />)}
 
                         {/* Roof */}
                         {showRoof && <RoofModel walls={walls} height={globalWallHeight} />}
