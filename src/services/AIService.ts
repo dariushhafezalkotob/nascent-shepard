@@ -243,13 +243,15 @@ Your goal is to analyze a provided Floor Plan and a set of Style Reference Image
 
 CRITICAL RULES:
 1. SPATIAL MAPPING: Observe the labels in the floor plan (e.g., "Shared-Living", "Semi-private", "Outdoor-Space").
-2. STYLE ADHERENCE: Use the furniture, color palettes, and textures found in the Reference Images (e.g., light wood slats, terracotta tones, modular lounge seating, biophilic elements).
+2. STYLE ADHERENCE: Use the furniture, color palettes, and textures found in the Reference Images provided for the matching Category.
+   IMPORTANT: Reference images are provided in blocks. Only use the aesthetic of a category for rooms assigned to that category.
 3. DIMENSION AWARENESS: Respect the m² and meter labels on the plan. Do not suggest a 10-person table for a 5m² space.
 4. PRIVACY LOGIC: 
-   - 'Shared-Living' should focus on collaborative zones, lounge seating, and recreational items (like pool tables or arcade games seen in references).
-   - 'Semi-private' should focus on focus-work or smaller group discussions using booth-style or library seating.
-   - 'Outdoor-Space' should adopt the canopy and greenery aesthetic from the reference photos.
-5. VISUALIZATION PROMPT: Construct a detailed prompt for generating a photorealistic image of this room. MUST include specific furniture items you are placing and the style from the reference images.
+   - 'Shared' categories focus on social anchor pieces and recreational items.
+   - 'Semi-private' focus on focus-work, booths, or library aesthetics.
+   - 'Private' focus on restful, personal aesthetics (bedrooms/baths).
+   - 'Outdoor' should adopt the canopy and greenery aesthetic.
+5. VISUALIZATION PROMPT: Construct a detailed prompt for generating a photorealistic image of this room. MUST include specific furniture items you are placing and the style from the matching category references.
 
 OUTPUT FORMAT:
 Return ONLY a structured JSON object.
@@ -1535,7 +1537,25 @@ export class AIService {
             }
         ];
 
-        if (referenceImages && referenceImages.length > 0) {
+        if (context) {
+            // Grouped Images Approach
+            Object.entries(context.imagesByCategory).forEach(([category, images]) => {
+                if (images.length > 0) {
+                    parts.push({ text: `\n[REFERENCE IMAGES FOR CATEGORY: ${category.toUpperCase()}]\n` });
+                    images.forEach(img => {
+                        const base64Data = img.includes(',') ? img.split(',')[1] : img;
+                        const mime = img.includes('image/png') ? "image/png" : "image/jpeg";
+                        parts.push({
+                            inlineData: {
+                                data: base64Data,
+                                mimeType: mime
+                            }
+                        });
+                    });
+                }
+            });
+        } else if (referenceImages && referenceImages.length > 0) {
+            // Generic Fallback
             referenceImages.forEach(img => {
                 const base64Data = img.includes(',') ? img.split(',')[1] : img;
                 const mime = img.includes('image/png') ? "image/png" : "image/jpeg";

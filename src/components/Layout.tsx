@@ -285,7 +285,7 @@ export const Layout: React.FC = () => {
         }
     };
 
-    const handleApplyAIDressing = (concepts: any[], referenceImages: string[]) => {
+    const handleApplyAIDressing = (concepts: any[], imagesByCategory: Record<string, string[]>, roomMappings: Record<string, string>) => {
         console.log("Applying Room-Aware AI Dressing:", concepts);
         const newFurniture: any[] = [];
         const currentRooms = detectRooms(state.walls);
@@ -295,12 +295,10 @@ export const Layout: React.FC = () => {
             // 1. Find the target room by matching label text to concept zone_name
             const label = state.labels.find(l => l.text.toLowerCase().includes(concept.zone_name.toLowerCase()) || concept.zone_name.toLowerCase().includes(l.text.toLowerCase()));
 
-            // 2. Find the polygon containing this label (via centroid proximity or proper room detection logic)
-            // For restoration simplicity, we match via centroid proximity to the label
+            // 2. Find the polygon containing this label
             const room = label ? currentRooms.find(r => Math.abs(r.centroid.x - label.x) < 0.1 && Math.abs(r.centroid.y - label.y) < 0.1) : null;
 
             if (room) {
-
                 let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
                 room.path.forEach(p => {
                     minX = Math.min(minX, p.x);
@@ -319,7 +317,6 @@ export const Layout: React.FC = () => {
                     newFurniture.push({
                         id: Math.random().toString(36).substring(2, 9),
                         templateId: cleanId || 'sofa',
-                        // Ensure coordinates are finite and valid
                         x: isFinite(worldX) ? worldX : 0,
                         y: isFinite(worldY) ? worldY : 0,
                         rotation: (item.rotation || 0),
@@ -333,17 +330,22 @@ export const Layout: React.FC = () => {
         });
 
         if (newFurniture.length > 0 || concepts.length > 0) {
-            // Also update labels with prompts AND reference images
+            // Also update labels with prompts AND category-specific reference images
             const updatedLabels = state.labels.map(l => {
                 const concept = concepts.find(c =>
                     l.text.toLowerCase().includes(c.zone_name.toLowerCase()) ||
                     c.zone_name.toLowerCase().includes(l.text.toLowerCase())
                 );
+
                 if (concept) {
+                    // Find the category for this room from roomMappings
+                    const category = roomMappings[l.text];
+                    const relevantImages = category ? (imagesByCategory[category] || []) : [];
+
                     return {
                         ...l,
                         visualizationPrompt: concept.visualization_prompt || l.visualizationPrompt,
-                        referenceImages: referenceImages // Store all style references for now
+                        referenceImages: relevantImages
                     };
                 }
                 return l;
@@ -360,8 +362,38 @@ export const Layout: React.FC = () => {
     const handleOpenAIDressing = () => {
         if (canvasRef.current) {
             try {
-                // Capture the current canvas state
-                const dataUrl = canvasRef.current.toDataURL('image/png');
+                const canvas = canvasRef.current;
+                const tempCanvas = document.createElement('canvas');
+                const ctx = tempCanvas.getContext('2d');
+                if (!ctx) return;
+
+                const targetRatio = 16 / 9;
+                const currentRatio = canvas.width / canvas.height;
+
+                let outWidth = canvas.width;
+                let outHeight = canvas.height;
+
+                if (currentRatio > targetRatio) {
+                    // Wider than 16:9 - Pad top/bottom
+                    outHeight = canvas.width / targetRatio;
+                } else {
+                    // Taller than 16:9 - Pad sides
+                    outWidth = canvas.height * targetRatio;
+                }
+
+                tempCanvas.width = outWidth;
+                tempCanvas.height = outHeight;
+
+                // Fill with white
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, outWidth, outHeight);
+
+                // Center original canvas
+                const x = (outWidth - canvas.width) / 2;
+                const y = (outHeight - canvas.height) / 2;
+                ctx.drawImage(canvas, x, y);
+
+                const dataUrl = tempCanvas.toDataURL('image/png');
                 setCapturedFloorPlan(dataUrl);
                 setIsAIDressingOpen(true);
             } catch (e) {
@@ -369,7 +401,6 @@ export const Layout: React.FC = () => {
                 alert("Could not capture floor plan. Please ensure the canvas is visible.");
             }
         } else {
-            // Fallback if canvas ref is missing (shouldn't happen if mounted)
             setIsAIDressingOpen(true);
         }
     };

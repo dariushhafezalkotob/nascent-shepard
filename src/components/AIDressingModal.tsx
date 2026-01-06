@@ -7,7 +7,7 @@ interface AIDressingModalProps {
     onClose: () => void;
     floorPlanImage: string | null; // Base64 of current canvas
     apiKey: string;
-    onApplyFurniture: (placements: any[], referenceImages: string[]) => void;
+    onApplyFurniture: (placements: any[], imagesByCategory: Record<string, string[]>, roomMappings: Record<string, string>) => void;
     roomLabels: string[];
 }
 
@@ -114,8 +114,7 @@ export const AIDressingModal: React.FC<AIDressingModalProps> = ({ isOpen, onClos
 
     const handleApply = () => {
         if (result?.concepts) {
-            const allImages = Object.values(styleImagesByCategory).flat();
-            onApplyFurniture(result.concepts, allImages);
+            onApplyFurniture(result.concepts, styleImagesByCategory, roomMappings);
             onClose();
         }
     };
@@ -148,7 +147,7 @@ export const AIDressingModal: React.FC<AIDressingModalProps> = ({ isOpen, onClos
                                     <Layout size={18} className="text-indigo-500" />
                                     <h3 className="font-bold text-sm uppercase tracking-tight">Active Floor Plan</h3>
                                 </div>
-                                <div className="aspect-[4/3] bg-zinc-100 rounded-xl border border-zinc-200 overflow-hidden relative shadow-inner">
+                                <div className="aspect-video bg-zinc-100 rounded-xl border border-zinc-200 overflow-hidden relative shadow-inner">
                                     {floorPlanImage ? (
                                         <img src={floorPlanImage} alt="Floor Plan" className="w-full h-full object-contain" />
                                     ) : (

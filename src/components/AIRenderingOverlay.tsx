@@ -16,12 +16,14 @@ export const AIRenderingOverlay: React.FC<AIRenderingOverlayProps> = ({ apiKey, 
     const [showComparison, setShowComparison] = useState(false);
     const [originalScreenshot, setOriginalScreenshot] = useState<string | null>(null);
 
-    const handleRender = async () => {
-        // R3F puts the ID on the container div, so we need to find the nested canvas
-        const canvas = document.querySelector('#three-canvas canvas') as HTMLCanvasElement;
+    const viewfinderRef = React.useRef<HTMLDivElement>(null);
 
-        if (!canvas) {
-            setError("Could not find the 3D scene. Please try refreshing.");
+    const handleRender = async () => {
+        const canvas = document.querySelector('#three-canvas canvas') as HTMLCanvasElement;
+        const viewfinder = viewfinderRef.current;
+
+        if (!canvas || !viewfinder) {
+            setError("Could not find the 3D scene or viewfinder.");
             return;
         }
 
@@ -29,21 +31,41 @@ export const AIRenderingOverlay: React.FC<AIRenderingOverlayProps> = ({ apiKey, 
         setError(null);
 
         try {
-            // 1. Capture Screenshot
-            const screenshot = canvas.toDataURL('image/png');
+            // 1. Calculate Crop Area from Viewfinder
+            const canvasRect = canvas.getBoundingClientRect();
+            const vfRect = viewfinder.getBoundingClientRect();
+
+            // Map screen coordinates to internal canvas pixels
+            const scaleX = canvas.width / canvasRect.width;
+            const scaleY = canvas.height / canvasRect.height;
+
+            const cropX = (vfRect.left - canvasRect.left) * scaleX;
+            const cropY = (vfRect.top - canvasRect.top) * scaleY;
+            const cropW = vfRect.width * scaleX;
+            const cropH = vfRect.height * scaleY;
+
+            // 2. Perform the Crop
+            const tempCanvas = document.createElement('canvas');
+            const tCtx = tempCanvas.getContext('2d');
+            if (!tCtx) throw new Error("Context failed");
+
+            tempCanvas.width = cropW;
+            tempCanvas.height = cropH;
+
+            tCtx.drawImage(
+                canvas,
+                cropX, cropY, cropW, cropH, // Source (Cropped area)
+                0, 0, cropW, cropH        // Destination
+            );
+
+            const screenshot = tempCanvas.toDataURL('image/png');
             setOriginalScreenshot(screenshot);
 
-            // 2. Identify Context
+            // 3. Identify Context
             const activePrompt = activeRoom?.visualizationPrompt || "A photorealistic render of an architect-designed interior.";
             const activeRefs = activeRoom?.referenceImages || [];
 
-            console.log("SENDING TO AI:", {
-                room: activeRoom?.text,
-                prompt: activePrompt,
-                references: activeRefs.length
-            });
-
-            // 3. Send to AI
+            // 4. Send to AI
             const result = await AIService.renderPhotorealistic(screenshot, apiKey, activePrompt, activeRefs);
             setRenderedImage(result);
         } catch (err: any) {
@@ -63,17 +85,51 @@ export const AIRenderingOverlay: React.FC<AIRenderingOverlayProps> = ({ apiKey, 
     };
 
     return (
-        <div className="absolute inset-x-0 top-0 pointer-events-none p-6 flex flex-col items-center">
+        <div className="absolute inset-0 pointer-events-none flex flex-col items-center">
+            {/* Viewfinder Layer */}
+            {!renderedImage && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                    {/* Side Masks Only */}
+                    <div className="absolute left-0 top-0 bottom-0 w-[7.5vw] bg-black/40" />
+                    <div className="absolute right-0 top-0 bottom-0 w-[7.5vw] bg-black/40" />
+
+                    {/* Viewfinder Rectangle (16:9) */}
+                    <div
+                        ref={viewfinderRef}
+                        className="w-[85vw] aspect-video border-2 border-white/50 rounded-sm shadow-[0_0_0_1px_rgba(0,0,0,0.5),0_0_40px_rgba(0,0,0,0.3)] relative flex items-center justify-center"
+                    >
+                        {/* Corner markers */}
+                        <div className="absolute -top-1 -left-1 w-6 h-6 border-t-2 border-l-2 border-white" />
+                        <div className="absolute -top-1 -right-1 w-6 h-6 border-t-2 border-r-2 border-white" />
+                        <div className="absolute -bottom-1 -left-1 w-6 h-6 border-b-2 border-l-2 border-white" />
+                        <div className="absolute -bottom-1 -right-1 w-6 h-6 border-b-2 border-r-2 border-white" />
+
+                        {/* Grid lines (optional but professional) */}
+                        <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-20">
+                            <div className="border border-white/30" />
+                            <div className="border border-white/30" />
+                            <div className="border border-white/30" />
+                            <div className="border border-white/30" />
+                            <div className="border border-white/30" />
+                            <div className="border border-white/30" />
+                            <div className="border border-white/30" />
+                            <div className="border border-white/30" />
+                            <div className="border border-white/30" />
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Control Bar */}
             {!renderedImage && (
-                <div className="pointer-events-auto bg-black/80 backdrop-blur-md rounded-2xl p-6 shadow-2xl border border-white/20 flex flex-col items-center gap-4 max-w-md animate-in fade-in slide-in-from-top-4 duration-500">
+                <div className="absolute top-6 pointer-events-auto bg-black/80 backdrop-blur-md rounded-2xl p-6 shadow-2xl border border-white/20 flex flex-col items-center gap-4 max-w-md animate-in fade-in slide-in-from-top-4 duration-500">
                     <div className="flex items-center gap-3 text-white">
                         <div className="p-2 bg-indigo-500 rounded-lg">
                             <Sparkles size={20} />
                         </div>
                         <div>
                             <h2 className="text-lg font-bold">Studio AI Renderer</h2>
-                            <p className="text-xs text-white/60">Position camera then hit render</p>
+                            <p className="text-xs text-white/60">Compose shot inside frame then render</p>
                         </div>
                     </div>
 
