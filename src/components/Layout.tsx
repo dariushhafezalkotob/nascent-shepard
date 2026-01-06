@@ -13,6 +13,8 @@ import { SavedPlansModal } from './SavedPlansModal';
 import { MaterialsSidebar } from './MaterialsSidebar';
 import { DecorationSetupModal } from './DecorationSetupModal';
 import { ProductPickerPopup } from './ProductPickerPopup';
+import { detectRooms } from '../utils/roomDetection';
+import { AIDressingModal } from './AIDressingModal';
 import { distributeBudget } from '../utils/budgetDistribution';
 import { AIRenderingOverlay } from './AIRenderingOverlay';
 import type { Choice, Point } from '../types';
@@ -45,10 +47,12 @@ export const Layout: React.FC = () => {
     const [isAIModalOpen, setIsAIModalOpen] = React.useState(false);
     const [isSaveModalOpen, setIsSaveModalOpen] = React.useState(false);
     const [isDecorationModalOpen, setIsDecorationModalOpen] = React.useState(false);
+    const [capturedFloorPlan, setCapturedFloorPlan] = React.useState<string | null>(null);
     const [referenceImage, setReferenceImage] = React.useState<string | null>(null);
     const [referenceDims, setReferenceDims] = React.useState<{ width: number, depth: number } | null>(null);
     const [debugJson, setDebugJson] = React.useState<string>("");
     const [apiKey, setApiKey] = React.useState<string>("");
+    const [isAIDressingOpen, setIsAIDressingOpen] = React.useState(false);
     const [isTracePanelMinimized, setIsTracePanelMinimized] = React.useState(false);
 
     // 1. Initial Load from Autosave
@@ -280,7 +284,103 @@ export const Layout: React.FC = () => {
         }
     };
 
+    const handleApplyAIDressing = (concepts: any[], referenceImages: string[]) => {
+        console.log("Applying Room-Aware AI Dressing:", concepts);
+        const newFurniture: any[] = [];
+        const currentRooms = detectRooms(state.walls);
+
+        concepts.forEach(concept => {
+            // Match room by label text (fuzzy match)
+            // 1. Find the target room by matching label text to concept zone_name
+            const label = state.labels.find(l => l.text.toLowerCase().includes(concept.zone_name.toLowerCase()) || concept.zone_name.toLowerCase().includes(l.text.toLowerCase()));
+
+            // 2. Find the polygon containing this label (via centroid proximity or proper room detection logic)
+            // For restoration simplicity, we match via centroid proximity to the label
+            const room = label ? currentRooms.find(r => Math.abs(r.centroid.x - label.x) < 0.1 && Math.abs(r.centroid.y - label.y) < 0.1) : null;
+
+            if (room) {
+
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                room.path.forEach(p => {
+                    minX = Math.min(minX, p.x);
+                    maxX = Math.max(maxX, p.x);
+                    minY = Math.min(minY, p.y);
+                    maxY = Math.max(maxY, p.y);
+                });
+                const roomW = maxX - minX;
+                const roomH = maxY - minY;
+
+                (concept.items || []).forEach((item: any) => {
+                    const cleanId = item.templateId?.toString().split(' ')[0];
+                    const worldX = minX + (item.x_rel * roomW);
+                    const worldY = minY + (item.y_rel * roomH);
+
+                    newFurniture.push({
+                        id: Math.random().toString(36).substring(2, 9),
+                        templateId: cleanId || 'sofa',
+                        // Ensure coordinates are finite and valid
+                        x: isFinite(worldX) ? worldX : 0,
+                        y: isFinite(worldY) ? worldY : 0,
+                        rotation: (item.rotation || 0),
+                        width: item.width || 1,
+                        depth: item.depth || 1,
+                        label: item.label || 'Furniture',
+                        category: item.category || 'living'
+                    });
+                });
+            }
+        });
+
+        if (newFurniture.length > 0 || concepts.length > 0) {
+            // Also update labels with prompts AND reference images
+            const updatedLabels = state.labels.map(l => {
+                const concept = concepts.find(c =>
+                    l.text.toLowerCase().includes(c.zone_name.toLowerCase()) ||
+                    c.zone_name.toLowerCase().includes(l.text.toLowerCase())
+                );
+                if (concept) {
+                    return {
+                        ...l,
+                        visualizationPrompt: concept.visualization_prompt || l.visualizationPrompt,
+                        referenceImages: referenceImages // Store all style references for now
+                    };
+                }
+                return l;
+            });
+
+            setHistory(prev => ({
+                ...prev,
+                furniture: [...prev.furniture, ...newFurniture],
+                labels: updatedLabels
+            }), true);
+        }
+    };
+
+    const handleOpenAIDressing = () => {
+        if (canvasRef.current) {
+            try {
+                // Capture the current canvas state
+                const dataUrl = canvasRef.current.toDataURL('image/png');
+                setCapturedFloorPlan(dataUrl);
+                setIsAIDressingOpen(true);
+            } catch (e) {
+                console.error("Failed to capture canvas:", e);
+                alert("Could not capture floor plan. Please ensure the canvas is visible.");
+            }
+        } else {
+            // Fallback if canvas ref is missing (shouldn't happen if mounted)
+            setIsAIDressingOpen(true);
+        }
+    };
+
     const selectedObject = state.selectedId ? state.objects.find(o => o.id === state.selectedId) : null;
+
+    const worldToScreen = (p: { x: number, y: number }) => {
+        return {
+            x: p.x * state.zoom + state.pan.x,
+            y: p.y * state.zoom + state.pan.y
+        };
+    };
 
     return (
         <div className="flex h-screen w-screen overflow-hidden bg-white text-black font-sans">
@@ -308,6 +408,31 @@ export const Layout: React.FC = () => {
                             onDragOver={handleDragOver}
                         />
                     )}
+
+                    {/* 2D Room Labels Overlay */}
+                    {activeTab === 'layout' && state.labels.map(label => {
+                        const screenPos = worldToScreen({ x: label.x, y: label.y });
+                        if (!screenPos) return null;
+                        return (
+                            <div
+                                key={label.id}
+                                className="absolute transform -translate-x-1/2 -translate-y-1/2 px-2 py-1 bg-white/80 backdrop-blur-sm rounded border border-gray-200 shadow-sm text-xs font-semibold text-gray-700 pointer-events-auto cursor-pointer hover:bg-white hover:border-blue-400 hover:text-blue-600 transition-all select-none z-10"
+                                style={{
+                                    left: screenPos.x,
+                                    top: screenPos.y,
+                                    maxWidth: '120px',
+                                    textAlign: 'center'
+                                }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    const newName = prompt('Rename Room:', label.text);
+                                    if (newName) updateLabel(label.id, { text: newName });
+                                }}
+                            >
+                                {label.text}
+                            </div>
+                        );
+                    })}
 
                     {activeTab !== '3d' && activeTab !== 'surfaces' && activeTab !== 'rendering' && (
                         <NavigationWidget
@@ -444,6 +569,7 @@ export const Layout: React.FC = () => {
                     setActiveTab={setActiveTab}
                     onToolSelect={(mode: any) => setViewState(prev => ({ ...prev, mode }))}
                     onOpenAI={() => setIsAIModalOpen(true)}
+                    onOpenAIDressing={handleOpenAIDressing}
                     onNew={handleNewPlan}
                     onLoad={() => setIsSaveModalOpen(true)}
                 />
@@ -486,6 +612,16 @@ export const Layout: React.FC = () => {
                 onClose={() => setIsDecorationModalOpen(false)}
                 onConfirm={handleDecorationConfirm}
             />
+            {isAIDressingOpen && (
+                <AIDressingModal
+                    isOpen={isAIDressingOpen}
+                    onClose={() => setIsAIDressingOpen(false)}
+                    floorPlanImage={capturedFloorPlan || state.backgroundImage?.src || ""}
+                    roomLabels={state.labels.map(l => l.text)}
+                    onApplyFurniture={handleApplyAIDressing}
+                    apiKey={apiKey}
+                />
+            )}
         </div>
     );
 };

@@ -87,6 +87,8 @@ export interface RoomLabel {
     text: string;
     x: number;
     y: number;
+    visualizationPrompt?: string;
+    referenceImages?: string[];
 }
 
 export interface EditorState {

@@ -237,6 +237,47 @@ interface VisionResponse {
     image_height?: number;
 }
 
+const DRESSING_SYSTEM_INSTRUCTION = `
+You are an expert AI Interior Architect specializing in spatial "dressing" and furniture layouts. 
+Your goal is to analyze a provided Floor Plan and a set of Style Reference Images to create a cohesive design concept.
+
+CRITICAL RULES:
+1. SPATIAL MAPPING: Observe the labels in the floor plan (e.g., "Shared-Living", "Semi-private", "Outdoor-Space").
+2. STYLE ADHERENCE: Use the furniture, color palettes, and textures found in the Reference Images (e.g., light wood slats, terracotta tones, modular lounge seating, biophilic elements).
+3. DIMENSION AWARENESS: Respect the m² and meter labels on the plan. Do not suggest a 10-person table for a 5m² space.
+4. PRIVACY LOGIC: 
+   - 'Shared-Living' should focus on collaborative zones, lounge seating, and recreational items (like pool tables or arcade games seen in references).
+   - 'Semi-private' should focus on focus-work or smaller group discussions using booth-style or library seating.
+   - 'Outdoor-Space' should adopt the canopy and greenery aesthetic from the reference photos.
+5. VISUALIZATION PROMPT: Construct a detailed prompt for generating a photorealistic image of this room. MUST include specific furniture items you are placing and the style from the reference images.
+
+OUTPUT FORMAT:
+Return ONLY a structured JSON object.
+{
+  "concepts": [
+    {
+      "zone_name": "The label from the map",
+      "concept_description": "2-3 sentences on the vibe, citing style inspiration.",
+      "placement_logic": "Where exactly in that room the items should go.",
+      "visualization_prompt": "Photorealistic interior render prompt including the furniture and reference image styles.",
+      "items": [
+         { 
+           "templateId": "king_bed", 
+           "x_rel": 0.5, 
+           "y_rel": 0.2, 
+           "rotation": 0, 
+           "label": "King Bed", 
+           "category": "bedroom", 
+           "width": 2, 
+           "depth": 2,
+           "style_citation": "Inspired by the light wood aesthetic in Reference Image X"
+         }
+      ]
+    }
+  ]
+}
+`;
+
 export class AIService {
 
     static async generateLayout(data: any, apiKey: string): Promise<{ walls: Wall[], objects: any[], furniture: Furniture[], labels: RoomLabel[], generatedImage?: string, rawResponse?: string, dimensions?: { width: number, depth: number }, background?: { width: number, height: number, metersPerPixel: number, x: number, y: number } }> {
@@ -1417,6 +1458,64 @@ export class AIService {
         } catch (e: any) {
             console.error("Custom Modeling Failed:", e);
             throw new Error(`Custom Modeling Failed: ${e.message}`);
+        }
+    }
+
+    static async suggestDressing(floorPlanBase64: string, referenceImages: string[], apiKey: string, roomLabels: string[] = []): Promise<any> {
+        if (!apiKey) throw new Error("API Key required");
+
+        console.log("AIService: Suggesting Dressing for rooms:", roomLabels);
+
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({
+            model: "gemini-2.0-flash-exp",
+            systemInstruction: DRESSING_SYSTEM_INSTRUCTION,
+            generationConfig: { responseMimeType: "application/json" }
+        });
+
+        const prompt = `
+        I have attached my Floor Plan and ${referenceImages.length} Style Reference Images.
+        
+        Analyze the detected rooms: ${JSON.stringify(roomLabels)}.
+        
+        For each zone, suggest a functional layout using the aesthetic, furniture pieces, and textures seen across the style reference images. 
+        Focus on 'Shared-Living' for social anchor pieces, 'Semi-private' for focus-work with wood-slat aesthetics, and 'Outdoor' for biophilic garden pods as per instructions.
+        
+        Please provide the response in the structured JSON format requested in your instructions.
+        `;
+
+        const parts: any[] = [
+            prompt,
+            {
+                inlineData: {
+                    data: floorPlanBase64.split(',')[1],
+                    mimeType: "image/png"
+                }
+            }
+        ];
+
+        if (referenceImages && referenceImages.length > 0) {
+            referenceImages.forEach(img => {
+                const base64Data = img.includes(',') ? img.split(',')[1] : img;
+                const mime = img.includes('image/png') ? "image/png" : "image/jpeg";
+                parts.push({
+                    inlineData: {
+                        data: base64Data,
+                        mimeType: mime
+                    }
+                });
+            });
+        }
+
+        try {
+            const result = await model.generateContent(parts);
+            const text = result.response.text();
+            console.log("AI Dressing Response:", text);
+            return JSON.parse(text);
+
+        } catch (error) {
+            console.error("AI Dressing Failed:", error);
+            throw error;
         }
     }
 }

@@ -11,6 +11,7 @@ interface BottomBarProps {
     setActiveTab: (tab: 'layout' | 'furniture' | 'surfaces' | '3d' | 'rendering') => void;
     onToolSelect: (tool: 'wall' | 'divider' | 'select') => void;
     onOpenAI?: () => void;
+    onOpenAIDressing?: () => void;
     onNew?: () => void;
     onLoad?: () => void;
 }
@@ -23,7 +24,7 @@ const CATEGORY_ICONS: Record<string, any> = {
 };
 
 export const BottomBar: React.FC<BottomBarProps> = ({
-    activeTab, setActiveTab, onToolSelect, onOpenAI, onNew, onLoad
+    activeTab, setActiveTab, onToolSelect, onOpenAI, onOpenAIDressing, onNew, onLoad
 }) => {
 
     const tabs: { id: typeof activeTab, label: string, icon: any }[] = [
@@ -96,6 +97,19 @@ export const BottomBar: React.FC<BottomBarProps> = ({
                         </div>
                     );
                 })}
+
+                {activeTab === 'furniture' && (
+                    <div
+                        draggable={false}
+                        onClick={onOpenAIDressing}
+                        className="flex flex-col items-center gap-2 group min-w-[80px] cursor-pointer"
+                    >
+                        <div className="w-14 h-14 border border-zinc-200 rounded-xl flex items-center justify-center bg-indigo-50 group-hover:bg-indigo-100 group-hover:border-indigo-300 group-hover:shadow-md transition-all">
+                            <Sparkles size={24} className="text-indigo-600" />
+                        </div>
+                        <span className="text-xs font-medium text-zinc-500 group-hover:text-indigo-600 whitespace-nowrap">AI Dressing</span>
+                    </div>
+                )}
 
                 {activeTab === 'furniture' && FURNITURE_TEMPLATES.map((item) => {
                     const Icon = CATEGORY_ICONS[item.category] || Sofa;

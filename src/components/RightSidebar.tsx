@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Wall, WallObject, Furniture, RoomLabel } from '../types';
-import { Ruler, ArrowUpFromLine, Info, Box, Layers, Settings2, RotateCcw, Type, FlipHorizontal, FlipVertical, RotateCw, Trash2, Sparkles, Loader2, Image as ImageIcon, Type as TypeIcon } from 'lucide-react';
+import { Ruler, ArrowUpFromLine, Info, Box, Layers, Settings2, RotateCcw, Type, FlipHorizontal, FlipVertical, RotateCw, Trash2, Sparkles, Loader2, Image as ImageIcon, Type as TypeIcon, Copy, Check } from 'lucide-react';
 import { AIService } from '../services/AIService';
 
 interface RightSidebarProps {
@@ -42,6 +42,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     const selectedLabel = labels.find((l) => l.id === selectedId);
 
     const [modelingId, setModelingId] = React.useState<string | null>(null);
+    const [copied, setCopied] = React.useState(false);
 
     const handleStyleApply = async (file: File) => {
         if (!selectedFurniture || !apiKey) return;
@@ -520,6 +521,54 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                                     className="w-full px-3 py-2 bg-zinc-100 border border-zinc-200 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                                 />
                             </div>
+
+                            <div className="space-y-1.5 pt-4 border-t border-zinc-200">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-[10px] font-semibold text-zinc-500 uppercase flex items-center gap-1.5">
+                                        <ImageIcon size={12} /> Visualization Prompt
+                                    </label>
+                                    {selectedLabel.visualizationPrompt && (
+                                        <button
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(selectedLabel.visualizationPrompt || '');
+                                                setCopied(true);
+                                                setTimeout(() => setCopied(false), 2000);
+                                            }}
+                                            className="text-[10px] font-bold text-blue-500 hover:text-blue-600 flex items-center gap-1 transition-colors"
+                                        >
+                                            {copied ? <Check size={10} /> : <Copy size={10} />}
+                                            {copied ? 'COPIED' : 'COPY'}
+                                        </button>
+                                    )}
+                                </div>
+                                <textarea
+                                    value={selectedLabel.visualizationPrompt || ''}
+                                    onChange={(e) => updateLabel(selectedLabel.id, { visualizationPrompt: e.target.value })}
+                                    onFocus={snapshot}
+                                    placeholder="AI generated prompt for rendering..."
+                                    rows={5}
+                                    className="w-full px-3 py-2 bg-zinc-100 border border-zinc-200 rounded text-xs focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-y font-mono leading-relaxed"
+                                />
+                                <p className="text-[9px] text-zinc-400 italic leading-tight">
+                                    This prompt will be used to generate a photorealistic render of this room.
+                                </p>
+                            </div>
+
+                            {selectedLabel.referenceImages && selectedLabel.referenceImages.length > 0 && (
+                                <div className="space-y-1.5 pt-4 border-t border-zinc-200">
+                                    <label className="text-[10px] font-semibold text-zinc-500 uppercase flex items-center gap-1.5">
+                                        <Sparkles size={12} /> Style References
+                                    </label>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {selectedLabel.referenceImages.map((img, idx) => (
+                                            <div key={idx} className="aspect-square rounded border border-zinc-200 overflow-hidden shadow-sm bg-zinc-100">
+                                                <img src={img} alt={`Ref ${idx}`} className="w-full h-full object-cover" />
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <p className="text-[9px] text-zinc-400 italic">Images used to guide the decoration logic.</p>
+                                </div>
+                            )}
                         </div>
 
                         <div className="pt-8 border-t border-zinc-200">
