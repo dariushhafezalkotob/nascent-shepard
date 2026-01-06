@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
+import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera, Grid, ContactShadows, Environment, Text } from '@react-three/drei';
 import { EffectComposer, N8AO } from '@react-three/postprocessing';
 import * as THREE from 'three';
@@ -11,7 +11,7 @@ if (typeof window !== 'undefined') {
     RectAreaLightUniformsLib.init();
 }
 import { detectRooms } from '../utils/roomDetection';
-import type { Wall, Furniture, WallObject, ModelRecipe } from '../types';
+import type { Wall, Furniture, WallObject, ModelRecipe, RoomLabel } from '../types';
 import { SURFACE_MATERIALS } from '../constants/SurfaceMaterials';
 import { getWallSegments, distance } from '../utils/geometry';
 
@@ -30,6 +30,61 @@ const FurnitureLabel: React.FC<{ text: string; position: [number, number, number
     </Text>
 );
 
+const RoomLabel3D: React.FC<{ label: RoomLabel }> = ({ label }) => (
+    <Text
+        position={[label.x, 1.5, label.y]}
+        fontSize={0.2}
+        color="#1a1a1a"
+        anchorX="center"
+        anchorY="middle"
+        maxWidth={2}
+        textAlign="center"
+        fontWeight="bold"
+    >
+        {label.text.toUpperCase()}
+        <meshStandardMaterial color="#ffffff" opacity={0.6} transparent />
+    </Text>
+);
+
+const CameraWatcher: React.FC<{ labels: RoomLabel[], onChange: (label: RoomLabel | null) => void }> = ({ labels, onChange }) => {
+    const { camera } = useThree();
+    const lastActiveId = React.useRef<string | null>(null);
+
+    useFrame(() => {
+        if (!camera || labels.length === 0) return;
+
+        let closestLabel: RoomLabel | null = null;
+        let minDistanceSq = Infinity;
+
+        const camDir = new THREE.Vector3();
+        camera.getWorldDirection(camDir);
+
+        labels.forEach(l => {
+            const lPos = new THREE.Vector3(l.x, 0, l.y);
+            const toLabel = lPos.clone().sub(camera.position);
+
+            // Check if label is in front of camera
+            if (toLabel.dot(camDir) > 0) {
+                const distSq = toLabel.lengthSq();
+                if (distSq < minDistanceSq) {
+                    minDistanceSq = distSq;
+                    closestLabel = l;
+                }
+            }
+        });
+
+        if (closestLabel && (closestLabel as any).id !== lastActiveId.current) {
+            lastActiveId.current = (closestLabel as any).id;
+            onChange(closestLabel);
+        } else if (!closestLabel && lastActiveId.current !== null) {
+            lastActiveId.current = null;
+            onChange(null);
+        }
+    });
+
+    return null;
+};
+
 interface ThreeDViewerProps {
     walls: Wall[];
     objects: any[];
@@ -37,8 +92,10 @@ interface ThreeDViewerProps {
     globalWallHeight: number;
     onUpdateWallHeight: (height: number) => void;
     onApplyMaterial?: (id: string, materialId: string, type: 'wall' | 'floor', side?: 'A' | 'B') => void;
+    labels: RoomLabel[];
     floorMaterials?: Record<string, string>;
     hideSettings?: boolean;
+    onActiveRoomChange?: (label: RoomLabel | null) => void;
 }
 
 const DynamicModel: React.FC<{ recipe: ModelRecipe; label?: string }> = ({ recipe, label }) => {
@@ -1380,7 +1437,7 @@ const MaterialDropHandler: React.FC<{
     return null;
 };
 
-export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furniture, globalWallHeight, onUpdateWallHeight, onApplyMaterial, floorMaterials, hideSettings }) => {
+export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furniture, labels, globalWallHeight, onUpdateWallHeight, onApplyMaterial, floorMaterials, hideSettings, onActiveRoomChange }) => {
     const [showRoof, setShowRoof] = React.useState(false);
     const [areaIntensity, setAreaIntensity] = React.useState(0.1);
     const [spotIntensity, setSpotIntensity] = React.useState(0.1);
@@ -1531,6 +1588,7 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furn
             >
                 <PerspectiveCamera makeDefault position={[12, 12, 12]} fov={40} />
                 <MaterialDropHandler onApplyMaterial={onApplyMaterial} containerRef={containerRef} />
+                {onActiveRoomChange && <CameraWatcher labels={labels} onChange={onActiveRoomChange} />}
                 <OrbitControls makeDefault minPolarAngle={0} maxPolarAngle={Math.PI / 2.1} />
 
                 <Suspense fallback={null}>
@@ -1643,6 +1701,9 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furn
 
                         {/* Furniture */}
                         {furniture.map(f => <FurnitureMesh key={f.id} item={f} lightIntensity={spotIntensity} />)}
+
+                        {/* Room Labels */}
+                        {labels.map(l => <RoomLabel3D key={l.id} label={l} />)}
 
                         {/* Roof */}
                         {showRoof && <RoofModel walls={walls} height={globalWallHeight} />}

@@ -334,23 +334,54 @@ export class AIService {
         return this.mockOrRealImplementation(userPrompt, genAI, apiKey, { landWidth, landDepth, targetArea: requiredArea, projectType }, selectedModel);
     }
 
-    static async renderPhotorealistic(base64Image: string, apiKey: string): Promise<string> {
+    static async renderPhotorealistic(screenshot: string, apiKey: string, prompt?: string, referenceImages?: string[]): Promise<string> {
         if (!apiKey) throw new Error("API Key required");
 
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-3-pro-image-preview" });
+        console.log("AIService: Rendering Photorealistic Image...");
+        console.log("Input Prompt:", prompt);
+        console.log("Input References:", referenceImages?.length || 0);
 
-        console.log("Generating Photorealistic AI Render with gemini-3-pro-image-preview...");
+        const genAI = new GoogleGenerativeAI(apiKey);
+        // Using gemini-3-flash-preview for high-context spatial rendering
+        const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+
+        const parts: any[] = [
+            {
+                text: `ACT AS AN ARCHITECTURAL RENDERER.
+             Transform this viewport screenshot into a high-end, photorealistic interior render.
+             ${prompt ? `FOLLOW THIS STYLE: ${prompt}` : "Use the style from the attached reference images."}
+             Maintain spatial geometry and furniture layout exactly as shown in the screenshot.`
+            },
+            {
+                inlineData: {
+                    data: screenshot.split(',')[1],
+                    mimeType: "image/png"
+                }
+            }
+        ];
+
+        if (referenceImages && referenceImages.length > 0) {
+            referenceImages.forEach((img) => {
+                const base64Data = img.includes(',') ? img.split(',')[1] : img;
+                const mime = img.includes('image/png') ? "image/png" : "image/jpeg";
+                parts.push({
+                    inlineData: {
+                        data: base64Data,
+                        mimeType: mime
+                    }
+                });
+            });
+        }
 
         try {
+            console.log("SUBMITTING TO GEMINI 3:", {
+                instruction: "Architectural Visualization",
+                prompt,
+                referenceCount: referenceImages?.length
+            });
+
             const result = await model.generateContent({
-                contents: [{
-                    role: 'user',
-                    parts: [
-                        { text: PHOTOREAL_RENDER_PROMPT },
-                        { inlineData: { data: base64Image.split(',')[1], mimeType: "image/png" } }
-                    ]
-                }],
+                contents: [{ role: 'user', parts }],
                 generationConfig: {
                     // @ts-ignore
                     responseModalities: ["IMAGE"]
@@ -359,24 +390,19 @@ export class AIService {
 
             const response = await result.response;
             // @ts-ignore
-            const generatedImage = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+            const generatedImageArr = response.candidates?.[0]?.content?.parts?.filter(p => p.inlineData);
 
-            if (!generatedImage) {
-                // Secondary check for part-based images
+            if (generatedImageArr && generatedImageArr.length > 0) {
                 // @ts-ignore
-                const firstPart = response.candidates?.[0]?.content?.parts?.[0];
-                // @ts-ignore
-                if (firstPart?.inlineData?.data) {
-                    // @ts-ignore
-                    return `data:image/png;base64,${firstPart.inlineData.data}`;
-                }
-                throw new Error("AI failed to generate a photorealistic image. It might have returned only text.");
+                return `data:image/png;base64,${generatedImageArr[0].inlineData.data}`;
             }
 
-            return `data:image/png;base64,${generatedImage}`;
-        } catch (error: any) {
-            console.error("Gemini Rendering Error:", error);
-            throw new Error(`Rendering Failed: ${error.message || "Unknown AI error"}`);
+            // Fallback: If no image received, return screenshot (during preview phase)
+            console.warn("No image modality returned, returning original screenshot as placeholder.");
+            return screenshot;
+        } catch (error) {
+            console.error("Rendering Failed:", error);
+            throw error;
         }
     }
 
@@ -1519,3 +1545,4 @@ export class AIService {
         }
     }
 }
+

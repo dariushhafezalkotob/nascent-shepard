@@ -17,7 +17,7 @@ import { detectRooms } from '../utils/roomDetection';
 import { AIDressingModal } from './AIDressingModal';
 import { distributeBudget } from '../utils/budgetDistribution';
 import { AIRenderingOverlay } from './AIRenderingOverlay';
-import type { Choice, Point } from '../types';
+import type { Choice, Point, RoomLabel } from '../types';
 import { Lock, Unlock, Sliders, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 
 export const Layout: React.FC = () => {
@@ -54,6 +54,7 @@ export const Layout: React.FC = () => {
     const [apiKey, setApiKey] = React.useState<string>("");
     const [isAIDressingOpen, setIsAIDressingOpen] = React.useState(false);
     const [isTracePanelMinimized, setIsTracePanelMinimized] = React.useState(false);
+    const [activeRoomLabel, setActiveRoomLabel] = React.useState<RoomLabel | null>(null);
 
     // 1. Initial Load from Autosave
     useEffect(() => {
@@ -391,11 +392,13 @@ export const Layout: React.FC = () => {
                             walls={state.walls}
                             objects={state.objects}
                             furniture={state.furniture}
+                            labels={state.labels}
                             globalWallHeight={state.globalWallHeight ?? 2.8}
                             onUpdateWallHeight={updateGlobalWallHeight}
                             onApplyMaterial={handleApplyMaterial}
                             floorMaterials={state.floorMaterials}
                             hideSettings={activeTab === 'surfaces' || activeTab === 'rendering'}
+                            onActiveRoomChange={setActiveRoomLabel}
                         />
                     ) : (
                         <EditorCanvas
@@ -442,7 +445,7 @@ export const Layout: React.FC = () => {
                         />
                     )}
 
-                    {activeTab === 'rendering' && <AIRenderingOverlay apiKey={apiKey} onBack={() => setActiveTab('3d')} />}
+                    {activeTab === 'rendering' && <AIRenderingOverlay apiKey={apiKey} onBack={() => setActiveTab('3d')} activeRoom={activeRoomLabel} />}
 
                     {referenceImage && activeTab === 'layout' && (
                         <div className="absolute top-4 left-4 z-10 bg-white p-2 rounded shadow-lg border border-zinc-200 w-[30vw] max-w-[400px] min-w-[200px] max-h-[85vh] flex flex-col overflow-hidden">

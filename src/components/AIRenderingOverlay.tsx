@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { Camera, Sparkles, X, Download, RefreshCw, Loader2, Maximize2 } from 'lucide-react';
 import { AIService } from '../services/AIService';
+import type { RoomLabel } from '../types';
 
 interface AIRenderingOverlayProps {
     apiKey: string;
     onBack: () => void;
+    activeRoom?: RoomLabel | null;
 }
 
-export const AIRenderingOverlay: React.FC<AIRenderingOverlayProps> = ({ apiKey, onBack }) => {
+export const AIRenderingOverlay: React.FC<AIRenderingOverlayProps> = ({ apiKey, onBack, activeRoom }) => {
     const [isGenerating, setIsGenerating] = useState(false);
     const [renderedImage, setRenderedImage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -31,8 +33,18 @@ export const AIRenderingOverlay: React.FC<AIRenderingOverlayProps> = ({ apiKey, 
             const screenshot = canvas.toDataURL('image/png');
             setOriginalScreenshot(screenshot);
 
-            // 2. Send to AI
-            const result = await AIService.renderPhotorealistic(screenshot, apiKey);
+            // 2. Identify Context
+            const activePrompt = activeRoom?.visualizationPrompt || "A photorealistic render of an architect-designed interior.";
+            const activeRefs = activeRoom?.referenceImages || [];
+
+            console.log("SENDING TO AI:", {
+                room: activeRoom?.text,
+                prompt: activePrompt,
+                references: activeRefs.length
+            });
+
+            // 3. Send to AI
+            const result = await AIService.renderPhotorealistic(screenshot, apiKey, activePrompt, activeRefs);
             setRenderedImage(result);
         } catch (err: any) {
             console.error("Rendering Error:", err);
@@ -91,6 +103,47 @@ export const AIRenderingOverlay: React.FC<AIRenderingOverlayProps> = ({ apiKey, 
                             {error}
                         </div>
                     )}
+
+                    {/* AI Payload Preview - Requested by User */}
+                    <div className="w-full mt-4 p-4 bg-zinc-900/50 rounded-xl border border-white/10 space-y-3">
+                        <div className="flex justify-between items-center">
+                            <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Active Context</span>
+                            {activeRoom ? (
+                                <span className="text-[10px] bg-indigo-500 text-white px-2 py-0.5 rounded-full font-bold">{activeRoom.text.toUpperCase()}</span>
+                            ) : (
+                                <span className="text-[10px] text-zinc-500 italic">No room in focus</span>
+                            )}
+                        </div>
+
+                        <div className="space-y-1">
+                            <span className="text-[9px] text-zinc-500 uppercase font-bold">Visualization Prompt</span>
+                            <p className="text-[11px] text-zinc-300 leading-relaxed line-clamp-3 italic">
+                                "{activeRoom?.visualizationPrompt || "Default architectural style..."}"
+                            </p>
+                        </div>
+
+                        {activeRoom?.referenceImages && activeRoom.referenceImages.length > 0 && (
+                            <div className="space-y-1">
+                                <span className="text-[9px] text-zinc-500 uppercase font-bold">Style Context ({activeRoom.referenceImages.length} images)</span>
+                                <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-hide">
+                                    {activeRoom.referenceImages.slice(0, 5).map((img, i) => (
+                                        <div key={i} className="w-8 h-8 rounded border border-white/10 overflow-hidden flex-shrink-0">
+                                            <img src={img} className="w-full h-full object-cover opacity-60" alt="" />
+                                        </div>
+                                    ))}
+                                    {activeRoom.referenceImages.length > 5 && (
+                                        <div className="w-8 h-8 rounded bg-white/5 flex items-center justify-center text-[10px] text-zinc-500 font-bold">
+                                            +{activeRoom.referenceImages.length - 5}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        <p className="text-[9px] text-zinc-500 pt-2 border-t border-white/5 italic">
+                            Gemini 3 will combine this viewport + prompt + references to generate the final render.
+                        </p>
+                    </div>
                 </div>
             )}
 
