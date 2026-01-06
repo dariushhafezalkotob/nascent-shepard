@@ -27,15 +27,37 @@ interface Placement {
     rotation: number;
 }
 
+export const CATEGORIES = ['Shared', 'Private', 'Semi-private', 'Outdoor'];
+
 export const AIDressingModal: React.FC<AIDressingModalProps> = ({ isOpen, onClose, floorPlanImage, apiKey, onApplyFurniture, roomLabels }) => {
-    const [styleImages, setStyleImages] = useState<string[]>([]);
+    const [styleImagesByCategory, setStyleImagesByCategory] = useState<Record<string, string[]>>({
+        'Shared': [],
+        'Private': [],
+        'Semi-private': [],
+        'Outdoor': []
+    });
+
+    // Maps each room Label to a Category
+    const [roomMappings, setRoomMappings] = useState<Record<string, string>>(() => {
+        const initial: Record<string, string> = {};
+        roomLabels.forEach(label => {
+            const lower = label.toLowerCase();
+            if (lower.includes('shared') || lower.includes('living') || lower.includes('dining')) initial[label] = 'Shared';
+            else if (lower.includes('private') || lower.includes('bed') || lower.includes('bath')) initial[label] = 'Private';
+            else if (lower.includes('semi') || lower.includes('office') || lower.includes('work') || lower.includes('study')) initial[label] = 'Semi-private';
+            else if (lower.includes('outdoor') || lower.includes('garden') || lower.includes('patio')) initial[label] = 'Outdoor';
+            else initial[label] = 'Shared'; // Default
+        });
+        return initial;
+    });
+
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [result, setResult] = useState<{ concepts: Concept[], placements?: Placement[] } | null>(null);
 
     if (!isOpen) return null;
 
-    const handleStyleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleStyleUpload = (category: string, e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []);
         if (files.length === 0) return;
 
@@ -43,14 +65,20 @@ export const AIDressingModal: React.FC<AIDressingModalProps> = ({ isOpen, onClos
             const reader = new FileReader();
             reader.onload = (event) => {
                 const base64 = event.target?.result as string;
-                setStyleImages(prev => [...prev, base64]);
+                setStyleImagesByCategory(prev => ({
+                    ...prev,
+                    [category]: [...prev[category], base64]
+                }));
             };
             reader.readAsDataURL(file);
         });
     };
 
-    const removeStyleImage = (index: number) => {
-        setStyleImages(prev => prev.filter((_, i) => i !== index));
+    const removeStyleImage = (category: string, index: number) => {
+        setStyleImagesByCategory(prev => ({
+            ...prev,
+            [category]: prev[category].filter((_, i) => i !== index)
+        }));
     };
 
     const handleSuggest = async () => {
@@ -58,15 +86,24 @@ export const AIDressingModal: React.FC<AIDressingModalProps> = ({ isOpen, onClos
             setError("Could not capture floor plan. Please try again.");
             return;
         }
-        if (styleImages.length === 0) {
-            setError("Please upload at least one style reference image.");
+
+        const allImages = Object.values(styleImagesByCategory).flat();
+        if (allImages.length === 0) {
+            setError("Please upload style reference images for at least one category.");
             return;
         }
 
         setIsLoading(true);
         setError(null);
         try {
-            const response = await AIService.suggestDressing(floorPlanImage, styleImages, apiKey, roomLabels);
+            // We pass the categorized structure to suggestDressing
+            const response = await AIService.suggestDressing(
+                floorPlanImage,
+                allImages,
+                apiKey,
+                roomLabels,
+                { imagesByCategory: styleImagesByCategory, roomMappings }
+            );
             setResult(response);
         } catch (err: any) {
             setError(err.message || "Failed to get design suggestions.");
@@ -77,8 +114,8 @@ export const AIDressingModal: React.FC<AIDressingModalProps> = ({ isOpen, onClos
 
     const handleApply = () => {
         if (result?.concepts) {
-            console.log("AIDressingModal: Applying room-aware concepts", result.concepts);
-            onApplyFurniture(result.concepts, styleImages);
+            const allImages = Object.values(styleImagesByCategory).flat();
+            onApplyFurniture(result.concepts, allImages);
             onClose();
         }
     };
@@ -132,47 +169,82 @@ export const AIDressingModal: React.FC<AIDressingModalProps> = ({ isOpen, onClos
                                 </div>
                             </div>
 
-                            {/* Right: Style Reference Upload */}
-                            <div className="space-y-4 font-inter">
-                                <div className="flex items-center justify-between">
+                            {/* Right: Categorized Style Reference Upload */}
+                            <div className="space-y-6 font-inter h-full flex flex-col">
+                                <div className="flex items-center justify-between shrink-0">
                                     <div className="flex items-center gap-2 text-zinc-900" >
                                         <ImageIcon size={18} className="text-indigo-500" />
-                                        <h3 className="font-bold text-sm uppercase tracking-tight">Style References</h3>
+                                        <h3 className="font-bold text-sm uppercase tracking-tight">Categorized Style Guides</h3>
                                     </div>
-                                    <span className="text-[10px] font-bold bg-zinc-100 text-zinc-500 px-2 py-0.5 rounded-full">
-                                        {styleImages.length} IMAGES
-                                    </span>
+                                    <div className="flex gap-2">
+                                        {CATEGORIES.map(cat => (
+                                            styleImagesByCategory[cat].length > 0 && (
+                                                <span key={cat} className="text-[9px] font-bold bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full border border-indigo-100 uppercase">
+                                                    {cat}: {styleImagesByCategory[cat].length}
+                                                </span>
+                                            )
+                                        ))}
+                                    </div>
                                 </div>
 
-                                <div className="grid grid-cols-3 gap-3">
-                                    {styleImages.map((img, idx) => (
-                                        <div key={idx} className="aspect-square relative group rounded-lg overflow-hidden border border-zinc-200 shadow-sm">
-                                            <img src={img} alt={`Ref ${idx}`} className="w-full h-full object-cover" />
-                                            <button
-                                                onClick={() => removeStyleImage(idx)}
-                                                className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
-                                            >
-                                                <Trash2 size={12} />
-                                            </button>
+                                <div className="space-y-4 overflow-y-auto pr-2 custom-scrollbar">
+                                    {CATEGORIES.map(category => (
+                                        <div key={category} className="p-4 bg-zinc-50 rounded-xl border border-zinc-200 space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">{category} Area</h4>
+                                                <span className="text-[10px] text-zinc-400 font-medium">
+                                                    {category === 'Shared' ? 'Living, Dining, Entry' :
+                                                        category === 'Private' ? 'Bedrooms, Baths' :
+                                                            category === 'Semi-private' ? 'Study, Office' : 'Gardens, Balconies'}
+                                                </span>
+                                            </div>
+
+                                            <div className="grid grid-cols-4 gap-2">
+                                                {styleImagesByCategory[category].map((img, idx) => (
+                                                    <div key={idx} className="aspect-square relative group rounded-lg overflow-hidden border border-zinc-200 bg-white">
+                                                        <img src={img} alt={`${category} Ref ${idx}`} className="w-full h-full object-cover" />
+                                                        <button
+                                                            onClick={() => removeStyleImage(category, idx)}
+                                                            className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                                                        >
+                                                            <Trash2 size={10} />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                                <label className="aspect-square flex flex-col items-center justify-center border-2 border-dashed border-zinc-200 rounded-lg hover:border-indigo-400 hover:bg-white cursor-pointer transition-all">
+                                                    <input type="file" multiple accept="image/*" className="hidden" onChange={(e) => handleStyleUpload(category, e)} />
+                                                    <Upload size={16} className="text-zinc-400 mb-0.5" />
+                                                    <span className="text-[9px] font-bold text-zinc-400 uppercase">Add {category}</span>
+                                                </label>
+                                            </div>
                                         </div>
                                     ))}
-                                    <label className="aspect-square flex flex-col items-center justify-center border-2 border-dashed border-zinc-200 rounded-lg hover:border-indigo-400 hover:bg-zinc-50 cursor-pointer transition-all">
-                                        <input type="file" multiple accept="image/*" className="hidden" onChange={handleStyleUpload} />
-                                        <Upload size={20} className="text-zinc-400 mb-1" />
-                                        <span className="text-[10px] font-bold text-zinc-500 uppercase">Add Style</span>
-                                    </label>
                                 </div>
 
-                                {styleImages.length === 0 && (
-                                    <div className="p-8 border-2 border-dashed border-zinc-100 rounded-xl flex flex-col items-center justify-center gap-2">
-                                        <div className="w-12 h-12 bg-zinc-50 rounded-full flex items-center justify-center text-zinc-300">
-                                            <ImageIcon size={24} />
-                                        </div>
-                                        <p className="text-xs text-zinc-400 text-center px-4 leading-relaxed">
-                                            Upload images of furniture, materials, or moods you like. Gemini will "dress" your floor plan using these as inspiration.
-                                        </p>
+                                {/* Room Assignment logic */}
+                                <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100 space-y-3 shrink-0">
+                                    <div className="flex items-center gap-2">
+                                        <Layout size={14} className="text-indigo-500" />
+                                        <h4 className="text-xs font-bold text-indigo-700 uppercase tracking-widest">Assign Rooms to Categories</h4>
                                     </div>
-                                )}
+                                    <div className="flex flex-wrap gap-2">
+                                        {roomLabels.map(room => (
+                                            <div key={room} className="flex items-center gap-1.5 bg-white px-2 py-1 rounded-lg border border-indigo-200 shadow-sm">
+                                                <span className="text-[10px] font-bold text-zinc-700">{room}</span>
+                                                <ArrowRight size={10} className="text-zinc-300" />
+                                                <select
+                                                    value={roomMappings[room]}
+                                                    onChange={(e) => setRoomMappings(prev => ({ ...prev, [room]: e.target.value }))}
+                                                    className="text-[10px] font-bold bg-transparent text-indigo-600 outline-none cursor-pointer"
+                                                >
+                                                    {CATEGORIES.map(cat => (
+                                                        <option key={cat} value={cat}>{cat}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     ) : (
@@ -185,7 +257,7 @@ export const AIDressingModal: React.FC<AIDressingModalProps> = ({ isOpen, onClos
                                     </div>
                                     <div>
                                         <h3 className="font-bold text-sm">Design Concepts Generated</h3>
-                                        <p className="text-[10px] text-zinc-400">Based on {styleImages.length} reference images</p>
+                                        <p className="text-[10px] text-zinc-400">Based on Categorized Style Guides</p>
                                     </div>
                                 </div>
                                 <div className="flex gap-2">
@@ -279,10 +351,10 @@ export const AIDressingModal: React.FC<AIDressingModalProps> = ({ isOpen, onClos
                                 </button>
                                 <button
                                     onClick={handleSuggest}
-                                    disabled={isLoading || styleImages.length === 0}
+                                    disabled={isLoading || Object.values(styleImagesByCategory).every(arr => arr.length === 0)}
                                     className="flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-200 transition-all hover:-translate-y-0.5"
                                 >
-                                    {isLoading ? <><Loader2 size={18} className="animate-spin" /> Analyzing Style...</> : <><Sparkles size={18} /> Generate Dressing Concepts</>}
+                                    {isLoading ? <><Loader2 size={18} className="animate-spin" /> Analyzing Styles...</> : <><Sparkles size={18} /> Generate Dressing Concepts</>}
                                 </button>
                             </div>
                         </>

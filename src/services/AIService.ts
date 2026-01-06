@@ -342,26 +342,29 @@ export class AIService {
         console.log("Input References:", referenceImages?.length || 0);
 
         const genAI = new GoogleGenerativeAI(apiKey);
-        // Using gemini-3-flash-preview for high-context spatial rendering
-        const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+        // Using gemini-3-pro-image-preview which is specifically tuned for image-to-image generation
+        const model = genAI.getGenerativeModel({ model: "gemini-3-pro-image-preview" });
 
         const parts: any[] = [
-            {
-                text: `ACT AS AN ARCHITECTURAL RENDERER.
-             Transform this viewport screenshot into a high-end, photorealistic interior render.
-             ${prompt ? `FOLLOW THIS STYLE: ${prompt}` : "Use the style from the attached reference images."}
-             Maintain spatial geometry and furniture layout exactly as shown in the screenshot.`
-            },
             {
                 inlineData: {
                     data: screenshot.split(',')[1],
                     mimeType: "image/png"
                 }
+            },
+            {
+                text: JSON.stringify({
+                    instruction: "Important: do not change the room geometry (keep the exact geometry of the room, walls, doors, and windows). Maintain the exact camera angle of the source image.",
+                    room_style_prompt: prompt || "High-end photorealistic interior architectural render.",
+                }, null, 2)
             }
         ];
 
-        if (referenceImages && referenceImages.length > 0) {
-            referenceImages.forEach((img) => {
+        // Limit to one or two reference images as requested
+        const limitedRefs = (referenceImages || []).slice(0, 2);
+
+        if (limitedRefs.length > 0) {
+            limitedRefs.forEach((img) => {
                 const base64Data = img.includes(',') ? img.split(',')[1] : img;
                 const mime = img.includes('image/png') ? "image/png" : "image/jpeg";
                 parts.push({
@@ -397,9 +400,7 @@ export class AIService {
                 return `data:image/png;base64,${generatedImageArr[0].inlineData.data}`;
             }
 
-            // Fallback: If no image received, return screenshot (during preview phase)
-            console.warn("No image modality returned, returning original screenshot as placeholder.");
-            return screenshot;
+            throw new Error("AI failed to generate a photorealistic image. It returned only text or an empty response.");
         } catch (error) {
             console.error("Rendering Failed:", error);
             throw error;
@@ -1487,7 +1488,7 @@ export class AIService {
         }
     }
 
-    static async suggestDressing(floorPlanBase64: string, referenceImages: string[], apiKey: string, roomLabels: string[] = []): Promise<any> {
+    static async suggestDressing(floorPlanBase64: string, referenceImages: string[], apiKey: string, roomLabels: string[] = [], context?: { imagesByCategory: Record<string, string[]>, roomMappings: Record<string, string> }): Promise<any> {
         if (!apiKey) throw new Error("API Key required");
 
         console.log("AIService: Suggesting Dressing for rooms:", roomLabels);
@@ -1499,12 +1500,26 @@ export class AIService {
             generationConfig: { responseMimeType: "application/json" }
         });
 
+        let categorizedContextPrompt = "";
+        if (context) {
+            categorizedContextPrompt = `
+            STYLE CATEGORIES & ASSIGNMENTS:
+            ${Object.entries(context.roomMappings).map(([room, cat]) => `- Room "${room}" is assigned to the STYLE CATEGORY: "${cat}"`).join('\n')}
+
+            I have categorized the reference images for you:
+            ${Object.entries(context.imagesByCategory).map(([cat, imgs]) => `- Category "${cat}": ${imgs.length} images provided.`).join('\n')}
+            
+            When designing for a specific room, prioritize the aesthetic and furniture types found in its assigned category's images.
+            `;
+        }
+
         const prompt = `
         I have attached my Floor Plan and ${referenceImages.length} Style Reference Images.
         
         Analyze the detected rooms: ${JSON.stringify(roomLabels)}.
+        ${categorizedContextPrompt}
         
-        For each zone, suggest a functional layout using the aesthetic, furniture pieces, and textures seen across the style reference images. 
+        For each zone, suggest a functional layout using the aesthetic, furniture pieces, and textures seen across the style reference images assigned to that zone's category. 
         Focus on 'Shared-Living' for social anchor pieces, 'Semi-private' for focus-work with wood-slat aesthetics, and 'Outdoor' for biophilic garden pods as per instructions.
         
         Please provide the response in the structured JSON format requested in your instructions.
