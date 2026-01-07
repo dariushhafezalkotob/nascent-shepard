@@ -1,7 +1,8 @@
 import React from 'react';
 import type { Wall, WallObject, Furniture, RoomLabel } from '../types';
-import { Ruler, ArrowUpFromLine, Info, Box, Layers, Settings2, RotateCcw, Type, FlipHorizontal, FlipVertical, RotateCw, Trash2, Sparkles, Loader2, Image as ImageIcon, Type as TypeIcon, Copy, Check } from 'lucide-react';
+import { Ruler, ArrowUpFromLine, Info, Box, Layers, Settings2, RotateCcw, Type, FlipHorizontal, FlipVertical, RotateCw, Trash2, Sparkles, Loader2, Image as ImageIcon, Type as TypeIcon, Copy, Check, Sliders } from 'lucide-react';
 import { AIService } from '../services/AIService';
+import { FURNITURE_TEMPLATES } from '../constants/FurnitureTemplates';
 
 interface RightSidebarProps {
     selectedId: string | null;
@@ -396,6 +397,203 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                         </div>
 
                         <div className="space-y-4 pt-4 border-t border-zinc-200">
+                            {/* Sofa Variants Section */}
+                            {(selectedFurniture.templateId.toLowerCase().includes('sofa') || selectedFurniture.label.toLowerCase().includes('sofa')) && (
+                                <div className="space-y-1.5 pb-4 border-b border-zinc-100">
+                                    <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-1.5">
+                                        <Sliders size={12} /> Model Variant
+                                    </label>
+                                    <div className="grid grid-cols-3 gap-1">
+                                        {[
+                                            { id: 'sofa-2', label: '2-Seat' },
+                                            { id: 'sofa-3', label: '3-Seat' },
+                                            { id: 'sofa-l', label: 'L-Shape' }
+                                        ].map(variant => (
+                                            <button
+                                                key={variant.id}
+                                                onClick={() => {
+                                                    const template = FURNITURE_TEMPLATES.find(t => t.id === variant.id);
+                                                    if (template) {
+                                                        snapshot();
+                                                        updateFurniture(selectedFurniture.id, {
+                                                            templateId: template.id,
+                                                            width: template.width,
+                                                            depth: template.depth,
+                                                            label: template.label
+                                                        });
+                                                    }
+                                                }}
+                                                className={`px-2 py-1.5 text-[10px] font-bold rounded border transition-all ${selectedFurniture.templateId === variant.id ||
+                                                    (variant.id === 'sofa-3' && selectedFurniture.templateId === 'sofa')
+                                                    ? 'bg-black border-black text-white shadow-sm'
+                                                    : 'bg-zinc-50 border-zinc-200 text-zinc-500 hover:border-zinc-400'
+                                                    }`}
+                                            >
+                                                {variant.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Coffee Table Variants Section */}
+                            {(selectedFurniture.templateId.toLowerCase().includes('coffee-table') || selectedFurniture.label.toLowerCase().includes('coffee table')) && (
+                                <div className="space-y-1.5 pb-4 border-b border-zinc-100">
+                                    <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-1.5">
+                                        <Sliders size={12} /> Model Variant
+                                    </label>
+                                    <div className="grid grid-cols-3 gap-1">
+                                        {[
+                                            { id: 'coffee-table', label: 'Standard' },
+                                            { id: 'coffee-table-square', label: 'Square' },
+                                            { id: 'coffee-table-round', label: 'Round' }
+                                        ].map(variant => (
+                                            <button
+                                                key={variant.id}
+                                                onClick={() => {
+                                                    const template = FURNITURE_TEMPLATES.find(t => t.id === variant.id);
+                                                    if (template) {
+                                                        snapshot();
+                                                        updateFurniture(selectedFurniture.id, {
+                                                            templateId: template.id,
+                                                            width: template.width,
+                                                            depth: template.depth,
+                                                            label: template.label
+                                                        });
+                                                    }
+                                                }}
+                                                className={`px-2 py-1.5 text-[10px] font-bold rounded border transition-all ${selectedFurniture.templateId === variant.id
+                                                    ? 'bg-black border-black text-white shadow-sm'
+                                                    : 'bg-zinc-50 border-zinc-200 text-zinc-500 hover:border-zinc-400'
+                                                    }`}
+                                            >
+                                                {variant.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Bed Variants Section */}
+                            {(selectedFurniture.templateId.toLowerCase().includes('bed') || selectedFurniture.label.toLowerCase().includes('bed')) && (
+                                <div className="space-y-1.5 pb-4 border-b border-zinc-100">
+                                    <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-1.5">
+                                        <Sliders size={12} /> Model Variant
+                                    </label>
+                                    <div className="grid grid-cols-3 gap-1">
+                                        {[
+                                            { id: 'bed-single', label: 'Single' },
+                                            { id: 'bed-double', label: 'Queen' },
+                                            { id: 'bed-king', label: 'King' }
+                                        ].map(variant => (
+                                            <button
+                                                key={variant.id}
+                                                onClick={() => {
+                                                    const template = FURNITURE_TEMPLATES.find(t => t.id === variant.id);
+                                                    if (template) {
+                                                        snapshot();
+                                                        updateFurniture(selectedFurniture.id, {
+                                                            templateId: template.id,
+                                                            width: template.width,
+                                                            depth: template.depth,
+                                                            label: template.label
+                                                        });
+                                                    }
+                                                }}
+                                                className={`px-2 py-1.5 text-[10px] font-bold rounded border transition-all ${selectedFurniture.templateId === variant.id ||
+                                                    (variant.id === 'bed-double' && selectedFurniture.templateId === 'bed')
+                                                    ? 'bg-black border-black text-white shadow-sm'
+                                                    : 'bg-zinc-50 border-zinc-200 text-zinc-500 hover:border-zinc-400'
+                                                    }`}
+                                            >
+                                                {variant.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Kitchen Cabinet Variants Section */}
+                            {(selectedFurniture.templateId.toLowerCase().includes('kitchen-base') || selectedFurniture.templateId.toLowerCase().includes('kitchen-counter') || selectedFurniture.label.toLowerCase().includes('base cabinet')) && (
+                                <div className="space-y-1.5 pb-4 border-b border-zinc-100">
+                                    <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-1.5">
+                                        <Sliders size={12} /> Unit Type
+                                    </label>
+                                    <div className="grid grid-cols-3 gap-1">
+                                        {[
+                                            { id: 'kitchen-counter', label: '60cm' },
+                                            { id: 'kitchen-counter-45', label: '45cm' },
+                                            { id: 'kitchen-counter-30', label: '30cm' },
+                                            { id: 'kitchen-drawers-3', label: 'Drawers' },
+                                            { id: 'kitchen-corner-base', label: 'Corner' },
+                                            { id: 'kitchen-oven', label: 'Oven' }
+                                        ].map(variant => (
+                                            <button
+                                                key={variant.id}
+                                                onClick={() => {
+                                                    const template = FURNITURE_TEMPLATES.find(t => t.id === variant.id);
+                                                    if (template) {
+                                                        snapshot();
+                                                        updateFurniture(selectedFurniture.id, {
+                                                            templateId: template.id,
+                                                            width: template.width,
+                                                            depth: template.depth,
+                                                            label: template.label
+                                                        });
+                                                    }
+                                                }}
+                                                className={`px-2 py-1.5 text-[10px] font-bold rounded border transition-all ${selectedFurniture.templateId === variant.id ||
+                                                        (variant.id === 'kitchen-counter' && selectedFurniture.templateId === 'kitchen-base')
+                                                        ? 'bg-black border-black text-white shadow-sm'
+                                                        : 'bg-zinc-50 border-zinc-200 text-zinc-500 hover:border-zinc-400'
+                                                    }`}
+                                            >
+                                                {variant.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {(selectedFurniture.templateId.toLowerCase().includes('kitchen-wall') || selectedFurniture.templateId.toLowerCase().includes('kitchen-upper') || selectedFurniture.label.toLowerCase().includes('wall cabinet')) && (
+                                <div className="space-y-1.5 pb-4 border-b border-zinc-100">
+                                    <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-1.5">
+                                        <Sliders size={12} /> Unit Type
+                                    </label>
+                                    <div className="grid grid-cols-3 gap-1">
+                                        {[
+                                            { id: 'kitchen-upper', label: '60cm' },
+                                            { id: 'kitchen-upper-45', label: '45cm' },
+                                            { id: 'kitchen-upper-30', label: '30cm' },
+                                            { id: 'kitchen-corner-upper', label: 'Corner' }
+                                        ].map(variant => (
+                                            <button
+                                                key={variant.id}
+                                                onClick={() => {
+                                                    const template = FURNITURE_TEMPLATES.find(t => t.id === variant.id);
+                                                    if (template) {
+                                                        snapshot();
+                                                        updateFurniture(selectedFurniture.id, {
+                                                            templateId: template.id,
+                                                            width: template.width,
+                                                            depth: template.depth,
+                                                            label: template.label
+                                                        });
+                                                    }
+                                                }}
+                                                className={`px-2 py-1.5 text-[10px] font-bold rounded border transition-all ${selectedFurniture.templateId === variant.id ||
+                                                        (variant.id === 'kitchen-upper' && selectedFurniture.templateId === 'kitchen-wall')
+                                                        ? 'bg-black border-black text-white shadow-sm'
+                                                        : 'bg-zinc-50 border-zinc-200 text-zinc-500 hover:border-zinc-400'
+                                                    }`}
+                                            >
+                                                {variant.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             <h3 className="text-xs font-bold text-zinc-900 uppercase tracking-wide flex items-center gap-2">
                                 <Box size={14} /> Dimensions
                             </h3>

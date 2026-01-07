@@ -111,22 +111,24 @@ export const BottomBar: React.FC<BottomBarProps> = ({
                     </div>
                 )}
 
-                {activeTab === 'furniture' && FURNITURE_TEMPLATES.map((item) => {
-                    const Icon = CATEGORY_ICONS[item.category] || Sofa;
-                    return (
-                        <div
-                            key={item.id}
-                            draggable={true}
-                            onDragStart={(e) => handleDragStart(e, 'furniture', item.id)}
-                            className="flex flex-col items-center gap-2 group min-w-[80px] cursor-grab active:cursor-grabbing"
-                        >
-                            <div className="w-14 h-14 border border-zinc-200 rounded-xl flex items-center justify-center bg-zinc-50 group-hover:border-black group-hover:shadow-md transition-all">
-                                <Icon size={24} className="text-zinc-600 group-hover:text-black" />
+                {activeTab === 'furniture' && FURNITURE_TEMPLATES
+                    .filter(item => !['sofa-2', 'sofa-3', 'sofa-l', 'coffee-table-square', 'coffee-table-round', 'bed-single', 'bed-double', 'bed-king', 'kitchen-counter', 'kitchen-counter-45', 'kitchen-counter-30', 'kitchen-upper', 'kitchen-upper-45', 'kitchen-upper-30', 'kitchen-drawers-3', 'kitchen-drawers-5', 'kitchen-corner-base', 'kitchen-corner-upper', 'kitchen-oven'].includes(item.id)) // Filter variants
+                    .map((item) => {
+                        const Icon = CATEGORY_ICONS[item.category] || Sofa;
+                        return (
+                            <div
+                                key={item.id}
+                                draggable={true}
+                                onDragStart={(e) => handleDragStart(e, 'furniture', item.id)}
+                                className="flex flex-col items-center gap-2 group min-w-[80px] cursor-grab active:cursor-grabbing"
+                            >
+                                <div className="w-14 h-14 border border-zinc-200 rounded-xl flex items-center justify-center bg-zinc-50 group-hover:border-black group-hover:shadow-md transition-all">
+                                    <Icon size={24} className="text-zinc-600 group-hover:text-black" />
+                                </div>
+                                <span className="text-xs font-medium text-zinc-500 group-hover:text-black whitespace-nowrap">{item.label}</span>
                             </div>
-                            <span className="text-xs font-medium text-zinc-500 group-hover:text-black whitespace-nowrap">{item.label}</span>
-                        </div>
-                    );
-                })}
+                        );
+                    })}
 
                 {activeTab === 'surfaces' && (
                     <div className="text-sm text-zinc-400 italic w-full text-center font-medium">Surface materials and patterns coming soon...</div>

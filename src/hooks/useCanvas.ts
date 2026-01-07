@@ -477,8 +477,32 @@ export const useCanvas = () => {
                     ctx.moveTo(-w / 2, -d / 2 + d * 0.35);
                     ctx.lineTo(w / 2, -d / 2 + d * 0.35);
                     ctx.stroke();
+                } else if (item.category === 'living' && item.templateId === 'sofa-l') {
+                    // L-Sofa Representation
+                    const sofaDepth = d * (0.95 / 1.6); // Based on standard vs chaise depth ratio
+                    const chaiseWidth = w * 0.35;
+
+                    // Main Seat Area
+                    ctx.strokeRect(-w / 2, -d / 2, w, sofaDepth);
+                    // Chaise Area
+                    ctx.strokeRect(-w / 2, -d / 2 + sofaDepth, chaiseWidth, d - sofaDepth);
+
+                    // Backrest (L-shaped)
+                    const backT = sofaDepth * 0.2;
+                    ctx.beginPath();
+                    ctx.moveTo(w / 2, -d / 2 + backT);
+                    ctx.lineTo(-w / 2 + backT, -d / 2 + backT);
+                    ctx.lineTo(-w / 2 + backT, d / 2 - backT);
+                    ctx.strokeStyle = isSelected ? '#3b82f6' : '#333333';
+                    ctx.lineWidth = 2; // Thicker backrest
+                    ctx.stroke();
+                    ctx.lineWidth = 1;
+
+                    // Armrest (Right side)
+                    const armW = w * 0.08;
+                    ctx.strokeRect(w / 2 - armW, -d / 2, armW, sofaDepth);
                 } else if (item.category === 'living' && item.templateId.includes('sofa')) {
-                    // Sofa Base
+                    // Sofa Base (Standard)
                     ctx.strokeRect(-w / 2, -d / 2, w, d);
                     // Backrest
                     const backrestT = d * 0.2;
@@ -487,6 +511,23 @@ export const useCanvas = () => {
                     const armrestW = w * 0.1;
                     ctx.strokeRect(-w / 2, -d / 2, armrestW, d);
                     ctx.strokeRect(w / 2 - armrestW, -d / 2, armrestW, d);
+                } else if (item.templateId.includes('coffee') || item.label.toLowerCase().includes('coffee table')) {
+                    if (item.templateId.includes('round')) {
+                        // Round Coffee Table
+                        ctx.beginPath();
+                        ctx.arc(0, 0, w / 2, 0, Math.PI * 2);
+                        ctx.stroke();
+                        // Inner decorative circle
+                        ctx.beginPath();
+                        ctx.arc(0, 0, w / 2.5, 0, Math.PI * 2);
+                        ctx.strokeStyle = isSelected ? '#3b82f6' : '#999999';
+                        ctx.stroke();
+                    } else {
+                        // Rectangular/Square Coffee Table
+                        ctx.strokeRect(-w / 2, -d / 2, w, d);
+                        // Optional inner rectangle
+                        ctx.strokeRect(-w / 2.5, -d / 2.5, w / 1.25, d / 1.25);
+                    }
                 } else if (item.templateId === 'dining-table') {
                     // Table
                     ctx.strokeRect(-w / 2, -d / 2, w, d);
@@ -552,6 +593,21 @@ export const useCanvas = () => {
                     // Faucet (small circle)
                     ctx.beginPath();
                     ctx.arc(0, -d * 0.35, d * 0.05, 0, Math.PI * 2);
+                    ctx.stroke();
+                } else if (item.templateId.includes('kitchen-') && (item.templateId.includes('base') || item.templateId.includes('counter') || item.templateId.includes('upper') || item.templateId.includes('wall'))) {
+                    const isUpper = item.templateId.includes('upper') || item.templateId.includes('wall');
+                    if (isUpper) {
+                        ctx.setLineDash([2, 2]);
+                    }
+                    ctx.strokeRect(-w / 2, -d / 2, w, d);
+                    ctx.setLineDash([]);
+
+                    // Cabinet Handle/Front Indicator
+                    ctx.beginPath();
+                    const edgeY = isUpper ? -d / 2 + 2 : d / 2 - 2;
+                    ctx.moveTo(-w / 2 + 5, edgeY);
+                    ctx.lineTo(w / 2 - 5, edgeY);
+                    ctx.strokeStyle = isSelected ? '#3b82f6' : '#cccccc';
                     ctx.stroke();
                 } else {
                     // Default fallback: slightly rounded box

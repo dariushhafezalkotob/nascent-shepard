@@ -1,6 +1,6 @@
 import React, { Suspense } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera, Grid, ContactShadows, Environment, Text } from '@react-three/drei';
+import { OrbitControls, PerspectiveCamera, Grid, ContactShadows, Environment, Text, useTexture } from '@react-three/drei';
 import { EffectComposer, N8AO } from '@react-three/postprocessing';
 import * as THREE from 'three';
 // @ts-ignore
@@ -211,73 +211,73 @@ const BedModel: React.FC<{ width: number; depth: number; color: string; label?: 
     );
 };
 
-const LSofaModel: React.FC<{ width: number; depth: number; label?: string }> = ({ label }) => {
+const LSofaModel: React.FC<{ width: number; depth: number; label?: string }> = ({ width, depth, label }) => {
     // Material: Cream/Beige Fabric (matching user's request)
     const fabricColor = "#f2ebd4";
+    const armWidth = 0.2;
     const armHeight = 0.65;
     const backHeight = 0.85;
-    const totalDepth = 0.9;
-    const chaiseDepth = 1.6;
+    const mainDepth = 0.95;
+    const chaiseDepth = depth;
+    const chaiseWidth = width * 0.35; // Chaise takes roughly 35% of width
+    const seatWidth = width - chaiseWidth;
+    const backThickness = 0.2;
 
     return (
         <group>
             {/* Feet */}
-            {[[-1.2, 0.4], [1.2, 0.4], [-1.2, -0.4], [1.2, -0.4], [-1.2, 1.4]].map((pos, i) => (
+            {[
+                [-width / 2 + 0.1, -chaiseDepth / 2 + 0.1],
+                [width / 2 - 0.1, -mainDepth / 2 + 0.1],
+                [-width / 2 + 0.1, chaiseDepth / 2 - 0.1],
+                [width / 2 - 0.1, mainDepth / 2 - 0.1],
+                [width / 2 - seatWidth / 2, mainDepth / 2 - 0.1]
+            ].map((pos, i) => (
                 <mesh key={i} position={[pos[0], 0.025, pos[1]]}>
                     <cylinderGeometry args={[0.04, 0.03, 0.05]} />
                     <meshStandardMaterial color="#111" />
                 </mesh>
             ))}
 
-            {/* Left Armrest */}
-            <mesh position={[-1.3, (armHeight - 0.05) / 2 + 0.05, 0]} castShadow receiveShadow>
-                <boxGeometry args={[0.2, armHeight - 0.05, totalDepth]} />
+            {/* Left Armrest (on the chaise side usually, but let's keep it consistent) */}
+            <mesh position={[-width / 2 + armWidth / 2, (armHeight - 0.05) / 2 + 0.05, (chaiseDepth - mainDepth) / 2]} castShadow receiveShadow>
+                <boxGeometry args={[armWidth, armHeight - 0.05, mainDepth]} />
                 <meshStandardMaterial color={fabricColor} roughness={0.9} />
             </mesh>
 
             {/* Right Armrest */}
-            <mesh position={[1.3, (armHeight - 0.05) / 2 + 0.05, 0]} castShadow receiveShadow>
-                <boxGeometry args={[0.2, armHeight - 0.05, totalDepth]} />
+            <mesh position={[width / 2 - armWidth / 2, (armHeight - 0.05) / 2 + 0.05, 0]} castShadow receiveShadow>
+                <boxGeometry args={[armWidth, armHeight - 0.05, mainDepth]} />
                 <meshStandardMaterial color={fabricColor} roughness={0.9} />
             </mesh>
 
             {/* Chaise Seat */}
-            <mesh position={[-0.75, 0.2 + 0.05, 0.35]} castShadow receiveShadow>
-                <boxGeometry args={[0.85, 0.4, chaiseDepth]} />
+            <mesh position={[-width / 2 + chaiseWidth / 2 + armWidth / 2, 0.2 + 0.05, (chaiseDepth - mainDepth) / 2]} castShadow receiveShadow>
+                <boxGeometry args={[chaiseWidth - armWidth, 0.4, chaiseDepth]} />
                 <meshStandardMaterial color={fabricColor} roughness={0.9} />
             </mesh>
 
             {/* Main Seat */}
-            <mesh position={[0.5, 0.2 + 0.05, 0]} castShadow receiveShadow>
-                <boxGeometry args={[1.65, 0.4, totalDepth]} />
+            <mesh position={[width / 2 - seatWidth / 2 - armWidth / 2, 0.2 + 0.05, 0]} castShadow receiveShadow>
+                <boxGeometry args={[seatWidth - armWidth, 0.4, mainDepth]} />
                 <meshStandardMaterial color={fabricColor} roughness={0.9} />
             </mesh>
 
             {/* Backrest Structure */}
-            <mesh position={[0, 0.35 + 0.05, -0.4]} castShadow receiveShadow>
-                <boxGeometry args={[2.6, 0.7, 0.2]} />
+            <mesh position={[0, 0.35 + 0.05, -mainDepth / 2 + backThickness / 2]} castShadow receiveShadow>
+                <boxGeometry args={[width, 0.7, backThickness]} />
                 <meshStandardMaterial color={fabricColor} roughness={0.9} />
             </mesh>
 
             {/* Back Cushions */}
             <group position={[0, 0, 0]}>
-                {[-0.8, 0.05, 0.9].map((x, i) => (
-                    <mesh key={i} position={[x, 0.65, -0.25]} rotation={[-0.1, 0, 0]} castShadow receiveShadow>
-                        <boxGeometry args={[0.8, 0.45, 0.15]} />
+                {[-width / 4, width / 4].map((x, i) => (
+                    <mesh key={i} position={[x, 0.65, -mainDepth / 2 + backThickness]} rotation={[-0.1, 0, 0]} castShadow receiveShadow>
+                        <boxGeometry args={[width / 2.2, 0.45, 0.15]} />
                         <meshStandardMaterial color={fabricColor} roughness={0.9} />
                     </mesh>
                 ))}
             </group>
-
-            {/* Pull Tabs */}
-            <mesh position={[-0.75, 0.3, 1.15]} castShadow receiveShadow>
-                <boxGeometry args={[0.12, 0.12, 0.01]} />
-                <meshStandardMaterial color={fabricColor} roughness={0.9} />
-            </mesh>
-            <mesh position={[0.5, 0.3, 0.45]} castShadow receiveShadow>
-                <boxGeometry args={[0.12, 0.12, 0.01]} />
-                <meshStandardMaterial color={fabricColor} roughness={0.9} />
-            </mesh>
 
             {label && (
                 <FurnitureLabel text={label} position={[0, backHeight + 0.1, 0]} />
@@ -398,7 +398,7 @@ const ChairModel: React.FC<{ isStool?: boolean }> = ({ isStool = false }) => {
     );
 };
 
-const TableModel: React.FC<{ width: number; depth: number; color: string; height?: number; type?: 'dining' | 'coffee' | 'island'; label?: string }> = ({ width, depth, color, height = 0.75, type = 'dining', label }) => {
+const TableModel: React.FC<{ width: number; depth: number; color: string; height?: number; type?: 'dining' | 'coffee' | 'island'; label?: string; shape?: 'box' | 'circle' }> = ({ width, depth, color, height = 0.75, type = 'dining', label, shape = 'box' }) => {
     const legWidth = 0.05;
     const topThickness = 0.04;
     const isCoffeeTable = type === 'coffee';
@@ -409,17 +409,26 @@ const TableModel: React.FC<{ width: number; depth: number; color: string; height
         <group>
             {/* Table Top */}
             <mesh position={[0, finalHeight - topThickness / 2, 0]} castShadow receiveShadow>
-                <boxGeometry args={[width, topThickness, depth]} />
+                {shape === 'circle' ? (
+                    <cylinderGeometry args={[width / 2, width / 2, topThickness, 32]} />
+                ) : (
+                    <boxGeometry args={[width, topThickness, depth]} />
+                )}
                 <meshStandardMaterial color={color} />
             </mesh>
 
             {/* Legs (for non-island tables) */}
-            {!isIsland && [
+            {!isIsland && (shape === 'circle' ? [
+                [-width * 0.25, -depth * 0.25],
+                [width * 0.25, -depth * 0.25],
+                [-width * 0.25, depth * 0.25],
+                [width * 0.25, depth * 0.25]
+            ] : [
                 [-width / 2 + legWidth, -depth / 2 + legWidth],
                 [width / 2 - legWidth, -depth / 2 + legWidth],
                 [-width / 2 + legWidth, depth / 2 - legWidth],
                 [width / 2 - legWidth, depth / 2 - legWidth]
-            ].map((pos, i) => (
+            ]).map((pos, i) => (
                 <mesh key={i} position={[pos[0], finalHeight / 2, pos[1]]} castShadow receiveShadow>
                     <boxGeometry args={[legWidth, finalHeight, legWidth]} />
                     <meshStandardMaterial color={color} />
@@ -1343,7 +1352,7 @@ const FurnitureMesh: React.FC<{ item: Furniture, lightIntensity: number }> = ({ 
 
         // Tables
         if (lowerId.includes('dining')) return <TableModel width={item.width} depth={item.depth} color="#8d6e63" type="dining" label={item.label} />;
-        if (lowerId.includes('coffee')) return <TableModel width={item.width} depth={item.depth} color="#8d6e63" type="coffee" label={item.label} />;
+        if (lowerId.includes('coffee')) return <TableModel width={item.width} depth={item.depth} color="#8d6e63" type="coffee" label={item.label} shape={lowerId.includes('round') ? 'circle' : 'box'} />;
         if (lowerId.includes('island')) return <TableModel width={item.width} depth={item.depth} color="#f8f9fa" type="island" label={item.label} />;
         if (lowerId.includes('table')) return <TableModel width={item.width} depth={item.depth} color="#adb5bd" label={item.label} />;
         if (lowerId.includes('desk')) return <TableModel width={item.width} depth={item.depth} color="#5d4037" label={item.label} />;
@@ -1363,8 +1372,8 @@ const FurnitureMesh: React.FC<{ item: Furniture, lightIntensity: number }> = ({ 
         if (lowerId.includes('drawers')) return <KitchenModel width={item.width} depth={item.depth} type="kitchen-drawers" label={item.label} />;
         if (lowerId.includes('sink')) return <KitchenModel width={item.width} depth={item.depth} type="sink" label={item.label} />;
         if (lowerId.includes('stove')) return <KitchenModel width={item.width} depth={item.depth} type="kitchen-oven" label={item.label} />; // Map stove to oven/cooktop variant
-        if (lowerId.includes('counter') || lowerId.includes('cabinet-base')) return <KitchenModel width={item.width} depth={item.depth} type="cabinet-base" label={item.label} />;
-        if (lowerId.includes('upper')) return <KitchenModel width={item.width} depth={item.depth} type="cabinet-upper" label={item.label} />;
+        if (lowerId.includes('counter') || lowerId.includes('kitchen-base')) return <KitchenModel width={item.width} depth={item.depth} type="cabinet-base" label={item.label} />;
+        if (lowerId.includes('upper') || lowerId.includes('kitchen-wall')) return <KitchenModel width={item.width} depth={item.depth} type="cabinet-upper" label={item.label} />;
 
         // Bathroom/Plumbing
         if (lowerId.includes('toilet')) return <PlumbingModel width={item.width} depth={item.depth} height={0.8} type="toilet" label={item.label} />;
