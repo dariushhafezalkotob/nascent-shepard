@@ -328,71 +328,81 @@ const ArmchairModel: React.FC<{ width: number; depth: number; label?: string }> 
 
 const ChairModel: React.FC<{ isStool?: boolean }> = ({ isStool = false }) => {
     const seatHeight = isStool ? 0.7 : 0.45;
-    const woodColor = "#d2b48c"; // Light oak/walnut for the frame
-    const cushionColor = "#495057"; // Grey fabric
+    const fabricColor = "#495057"; // Charcoal/Dark Grey fabric
+    const legColor = "#1a1a1a";    // Sleek black legs
+    const studColor = "#adb5bd";  // Silver nailhead trim
     const seatWidth = 0.45;
+    const seatDepth = 0.48;
+    const backHeight = 0.55;
 
     if (isStool) {
         return (
             <group>
-                {/* Seat Cushion */}
                 <mesh position={[0, seatHeight, 0]}>
-                    <boxGeometry args={[0.35, 0.08, 0.35]} />
-                    <meshStandardMaterial color={cushionColor} />
+                    <boxGeometry args={[0.38, 0.1, 0.38]} />
+                    <meshStandardMaterial color={fabricColor} roughness={0.9} />
                 </mesh>
-                {/* Tapered Legs */}
-                {[[-0.12, -0.12], [0.12, -0.12], [-0.12, 0.12], [0.12, 0.12]].map((pos, i) => (
+                {[[-0.14, -0.14], [0.14, -0.14], [-0.14, 0.14], [0.14, 0.14]].map((pos, i) => (
                     <mesh key={i} position={[pos[0], seatHeight / 2, pos[1]]}>
-                        <cylinderGeometry args={[0.015, 0.025, seatHeight, 12]} />
-                        <meshStandardMaterial color={woodColor} />
+                        <cylinderGeometry args={[0.015, 0.025, seatHeight, 8]} />
+                        <meshStandardMaterial color={legColor} />
                     </mesh>
                 ))}
             </group>
         );
     }
 
-    // High-Detail Designer Chair
     return (
         <group>
-            {/* Organic Side Frame */}
-            {[-1, 1].map((side) => (
-                <group key={side} position={[side * (seatWidth / 2 + 0.01), 0, 0]}>
-                    {/* Tapered Front Leg */}
-                    <mesh position={[0, 0.22, 0.12]} rotation={[0.08, 0, 0]}>
-                        <cylinderGeometry args={[0.015, 0.025, 0.45, 12]} />
-                        <meshStandardMaterial color={woodColor} />
-                    </mesh>
-                    {/* Tapered Back Leg */}
-                    <mesh position={[0, 0.35, -0.18]} rotation={[-0.15, 0, 0]}>
-                        <cylinderGeometry args={[0.015, 0.02, 0.7, 12]} />
-                        <meshStandardMaterial color={woodColor} />
-                    </mesh>
-                    {/* Sculpted Armrest */}
-                    <mesh position={[0, 0.62, -0.05]} rotation={[0.1 + Math.PI / 2, 0, 0]}>
-                        <cylinderGeometry args={[0.018, 0.018, 0.35, 12]} />
-                        <meshStandardMaterial color={woodColor} />
-                    </mesh>
-                </group>
+            {/* Front Straight Legs */}
+            {[[-0.18, 0.2], [0.18, 0.2]].map((p, i) => (
+                <mesh key={`f-${i}`} position={[p[0], 0.22, p[1]]}>
+                    <cylinderGeometry args={[0.02, 0.02, 0.45, 8]} />
+                    <meshStandardMaterial color={legColor} roughness={0.8} />
+                </mesh>
             ))}
 
-            {/* Seat Frame / Support */}
-            <mesh position={[0, seatHeight - 0.05, -0.03]}>
-                <boxGeometry args={[seatWidth, 0.03, 0.35]} />
-                <meshStandardMaterial color={woodColor} />
-            </mesh>
-
-            {/* Plush Seat Cushion */}
-            <mesh position={[0, seatHeight, -0.03]}>
-                <boxGeometry args={[seatWidth, 0.08, seatWidth]} />
-                <meshStandardMaterial color={cushionColor} />
-            </mesh>
-
-            {/* Thick Padded Wrap-around Backrest */}
-            <group position={[0, 0.62, -0.1]} rotation={[0.1, 0, 0]}>
-                <mesh rotation={[Math.PI / 2, 0, Math.PI]}>
-                    <torusGeometry args={[0.22, 0.05, 16, 32, Math.PI]} />
-                    <meshStandardMaterial color={cushionColor} />
+            {/* Back Straight Legs */}
+            {[[-0.18, -0.2], [0.18, -0.2]].map((p, i) => (
+                <mesh key={`b-${i}`} position={[p[0], 0.22, p[1]]}>
+                    <cylinderGeometry args={[0.02, 0.02, 0.45, 8]} />
+                    <meshStandardMaterial color={legColor} roughness={0.8} />
                 </mesh>
+            ))}
+
+            {/* Thick Upholstered Seat */}
+            <mesh position={[0, seatHeight, 0]} castShadow receiveShadow>
+                <boxGeometry args={[seatWidth, 0.12, seatDepth]} />
+                <meshStandardMaterial color={fabricColor} roughness={0.9} />
+            </mesh>
+
+            {/* High Upholstered Backrest - Perfectly Straight */}
+            <mesh position={[0, seatHeight + backHeight / 2, -seatDepth / 2 + 0.04]} castShadow receiveShadow>
+                <boxGeometry args={[seatWidth, backHeight, 0.08]} />
+                <meshStandardMaterial color={fabricColor} roughness={0.9} />
+            </mesh>
+
+            {/* Decorative Nailhead (Studded) Trim */}
+            <group position={[0, seatHeight - 0.04, 0]}>
+                {/* Horizontal Trim around seat */}
+                {Array.from({ length: 12 }).map((_, i) => (
+                    <group key={i}>
+                        {/* Front studs */}
+                        <mesh position={[(i / 11 - 0.5) * seatWidth, 0, seatDepth / 2 + 0.005]}>
+                            <sphereGeometry args={[0.006, 8, 8]} />
+                            <meshStandardMaterial color={studColor} metalness={0.8} roughness={0.2} />
+                        </mesh>
+                        {/* Side studs */}
+                        <mesh position={[seatWidth / 2 + 0.005, 0, (i / 11 - 0.5) * seatDepth]}>
+                            <sphereGeometry args={[0.006, 8, 8]} />
+                            <meshStandardMaterial color={studColor} metalness={0.8} roughness={0.2} />
+                        </mesh>
+                        <mesh position={[-seatWidth / 2 - 0.005, 0, (i / 11 - 0.5) * seatDepth]}>
+                            <sphereGeometry args={[0.006, 8, 8]} />
+                            <meshStandardMaterial color={studColor} metalness={0.8} roughness={0.2} />
+                        </mesh>
+                    </group>
+                ))}
             </group>
         </group>
     );
@@ -468,12 +478,12 @@ const TableModel: React.FC<{ width: number; depth: number; color: string; height
                         for (let i = 0; i < sideChairCount; i++) {
                             const offset = (i - (sideChairCount - 1) / 2) * 0.6;
                             chairs.push(
-                                <group key={`long-top-${i}`} position={[offset, 0, depth / 2 + 0.35]} rotation={[0, Math.PI, 0]}>
+                                <group key={`long-top-${i}`} position={[offset, 0, depth / 2 + 0.05]} rotation={[0, Math.PI, 0]}>
                                     <ChairModel />
                                 </group>
                             );
                             chairs.push(
-                                <group key={`long-bottom-${i}`} position={[offset, 0, -depth / 2 - 0.35]}>
+                                <group key={`long-bottom-${i}`} position={[offset, 0, -depth / 2 - 0.05]}>
                                     <ChairModel />
                                 </group>
                             );
@@ -488,12 +498,12 @@ const TableModel: React.FC<{ width: number; depth: number; color: string; height
                         for (let i = 0; i < endChairCount; i++) {
                             const offset = (i - (endChairCount - 1) / 2) * 0.6;
                             chairs.push(
-                                <group key={`end-left-${i}`} position={[-width / 2 - 0.35, 0, offset]} rotation={[0, Math.PI / 2, 0]}>
+                                <group key={`end-left-${i}`} position={[-width / 2 - 0.05, 0, offset]} rotation={[0, Math.PI / 2, 0]}>
                                     <ChairModel />
                                 </group>
                             );
                             chairs.push(
-                                <group key={`end-right-${i}`} position={[width / 2 + 0.35, 0, offset]} rotation={[0, -Math.PI / 2, 0]}>
+                                <group key={`end-right-${i}`} position={[width / 2 + 0.05, 0, offset]} rotation={[0, -Math.PI / 2, 0]}>
                                     <ChairModel />
                                 </group>
                             );
