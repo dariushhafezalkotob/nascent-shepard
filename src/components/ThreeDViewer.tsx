@@ -13,7 +13,7 @@ if (typeof window !== 'undefined') {
 import { detectRooms } from '../utils/roomDetection';
 import type { Wall, Furniture, WallObject, ModelRecipe, RoomLabel } from '../types';
 import { SURFACE_MATERIALS } from '../constants/SurfaceMaterials';
-import { getWallSegments, distance } from '../utils/geometry';
+import { getWallSegments } from '../utils/geometry';
 
 const FurnitureLabel: React.FC<{ text: string; position: [number, number, number]; rotation?: [number, number, number]; fontSize?: number }> = ({ text, position, rotation = [0, 0, 0], fontSize = 0.08 }) => (
     <Text
@@ -1696,12 +1696,6 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furn
                             // Find material using stable Room ID
                             const floorMatId = floorMaterials?.[room.id];
 
-                            // Calculate bounding box for texture scaling
-                            const minX = Math.min(...room.path.map(p => p.x));
-                            const maxX = Math.max(...room.path.map(p => p.x));
-                            const minY = Math.min(...room.path.map(p => p.y));
-                            const maxY = Math.max(...room.path.map(p => p.y));
-
                             return (
                                 <mesh
                                     key={room.id}
@@ -1784,6 +1778,7 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({ walls, objects, furn
 
                     <ContactShadows position={[0, 0, 0]} opacity={0.4} scale={30} blur={2.5} far={10} />
 
+                    {/* @ts-ignore */}
                     <EffectComposer disableNormalPass multisampling={4}>
                         <N8AO
                             intensity={1.2}

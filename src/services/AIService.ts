@@ -186,20 +186,6 @@ RETURN JSON ONLY:
 }
 `;
 
-const PHOTOREAL_RENDER_PROMPT = `
-ACT AS AN ULTRA-PHOTOREALISTIC photographer.
-TASK: Transform the provided wireframe/3D model screenshot into an ultra-photorealistic architectural interior render.
-
-STRICT CONSTRAINTS:
-1. GEOMETRY: You MUST EXACTLY matching the provided floor plan geometry. Do NOT move walls, do NOT change furniture positions.
-2. REALISM: photorealistic architecture photography style.
-3. TEXTURES: Apply high-quality wood, stone, fabric, and glass textures based on the scene context.
-4. LIGHTING: Use cinematic lighting, including natural light from windows and realistic artificial glows from lamps.
-5. STYLE: Modern, luxurious, and clean architectural photography style.
-
-OUTPUT: Provide ONLY the photorealistic image.
-`;
-
 interface VisionRoom {
     name: string;
     corners: { x: number; y: number }[];
@@ -355,51 +341,62 @@ export class AIService {
         if (!apiKey) throw new Error("API Key required");
 
         console.log("AIService: Rendering Photorealistic Image...");
-        console.log("Input Prompt:", prompt);
-        console.log("Input References:", referenceImages?.length || 0);
 
         const genAI = new GoogleGenerativeAI(apiKey);
-        // Using gemini-3-pro-image-preview which is specifically tuned for image-to-image generation
         const model = genAI.getGenerativeModel({ model: "gemini-3-pro-image-preview" });
 
-        const parts: any[] = [
-            {
-                inlineData: {
-                    data: screenshot.split(',')[1],
-                    mimeType: "image/png"
-                }
-            },
-            {
-                text: JSON.stringify({
-                    instruction: "Important: do not change the room geometry (keep the exact geometry of the room, walls, doors, and windows). Maintain the exact camera angle of the source image.",
-                    room_style_prompt: prompt || "High-end photorealistic interior architectural render.",
-                }, null, 2)
+        const parts: any[] = [];
+
+        // Image 1: The current scene screenshot
+        parts.push({
+            inlineData: {
+                data: screenshot.split(',')[1],
+                mimeType: "image/png"
             }
-        ];
+        });
 
-        // Limit to one or two reference images as requested
-        const limitedRefs = (referenceImages || []).slice(0, 2);
-
-        if (limitedRefs.length > 0) {
-            limitedRefs.forEach((img) => {
-                const base64Data = img.includes(',') ? img.split(',')[1] : img;
-                const mime = img.includes('image/png') ? "image/png" : "image/jpeg";
-                parts.push({
-                    inlineData: {
-                        data: base64Data,
-                        mimeType: mime
-                    }
-                });
+        // Image 2, 3...: Reference images
+        const limitedRefs = (referenceImages || []).slice(0, 3);
+        limitedRefs.forEach((img) => {
+            const base64Data = img.includes(',') ? img.split(',')[1] : img;
+            const mime = img.includes('image/png') ? "image/png" : "image/jpeg";
+            parts.push({
+                inlineData: {
+                    data: base64Data,
+                    mimeType: mime
+                }
             });
-        }
+        });
+
+        // Final Text Instruction - Highly detailed architectural focus
+        parts.push({
+            text: `
+                ACT AS AN ELITE ARCHITECTURAL PHOTOGRAPHER AND CGI ARTIST.
+                
+                TASK:
+                Create an ultra-photorealistic architectural interior render based on the provided Image 1 (3D Digital Model Screenshot).
+                
+                STRICT GEOMETRIC CONSTRAINTS:
+                0. ASPECT RATIO: Strictly maintain a 16:9 widescreen format for the output.
+                1. DO NOT ALTER GEOMETRY: The walls, windows, doors, and structural elements from Image 1 MUST remain in their exact coordinates and dimensions.
+                2. CAMERA FIDELITY: Maintain the exact camera angle, perspective, and field of view shown in Image 1.
+                3. FURNITURE LOCK: Keep all furniture pieces (sofas, tables, lamps, etc.) in their exact positions and rotations as shown in the digital model.
+                4. CONTENT INTEGRITY: DO NOT ADD OR REMOVE any items, furniture, walls, doors, or windows. Render EXACTLY what is present in the source model.
+                
+                VISUAL QUALITY & STYLE:
+                - LIGHTING: Implement cinematic, natural lighting with realistic global illumination and soft shadows.
+                - TEXTURES: Apply premium architectural finishes—natural wood grains, polished stone, soft textile weaves, and reflective glass.
+                - ATMOSPHERE: High-end, luxurious, and clean architectural photography style.
+                - DETAILS: Add hyper-realistic micro-details like fabric textures and light refractions.
+
+                USER CONCEPT:
+                ${prompt || "A sophisticated modern architectural interior."}
+
+                OUTPUT: Provide ONLY the final photorealistic image.
+            `
+        });
 
         try {
-            console.log("SUBMITTING TO GEMINI 3:", {
-                instruction: "Architectural Visualization",
-                prompt,
-                referenceCount: referenceImages?.length
-            });
-
             const result = await model.generateContent({
                 contents: [{ role: 'user', parts }],
                 generationConfig: {
