@@ -271,7 +271,39 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                             <div className="space-y-4 pt-4 border-t border-zinc-200">
                                 <h3 className="text-xs font-bold text-zinc-900 uppercase tracking-wide">Configuration</h3>
 
-                                <div className="space-y-3">
+                                {/* Door Type Selector */}
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-1.5">
+                                        <Sliders size={12} /> Door Type
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-1 mt-1.5">
+                                        {[
+                                            { id: 'room', label: 'Room' },
+                                            { id: 'balcony', label: 'Balcony' },
+                                            { id: 'entrance', label: 'Entrance (Double)' }
+                                        ].map(variant => (
+                                            <button
+                                                key={variant.id}
+                                                onClick={() => {
+                                                    snapshot();
+                                                    updateObject(selectedObject.id, {
+                                                        doorType: variant.id as any,
+                                                        // Auto-adjust width for double doors
+                                                        width: variant.id === 'entrance' ? 1.6 : (variant.id === 'balcony' ? 1.4 : 0.9)
+                                                    });
+                                                }}
+                                                className={`px-2 py-1.5 text-[10px] font-bold rounded border transition-all ${(selectedObject.doorType === variant.id || (!selectedObject.doorType && variant.id === 'room'))
+                                                        ? 'bg-black border-black text-white shadow-sm'
+                                                        : 'bg-zinc-50 border-zinc-200 text-zinc-500 hover:border-zinc-400'
+                                                    }`}
+                                            >
+                                                {variant.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3 pt-2">
                                     <label className="text-[10px] font-semibold text-zinc-500 uppercase block">Hinge Position</label>
                                     <div className="flex bg-zinc-100 p-1 rounded-lg">
                                         <button
@@ -543,9 +575,9 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                                                     }
                                                 }}
                                                 className={`px-2 py-1.5 text-[10px] font-bold rounded border transition-all ${selectedFurniture.templateId === variant.id ||
-                                                        (variant.id === 'kitchen-counter' && selectedFurniture.templateId === 'kitchen-base')
-                                                        ? 'bg-black border-black text-white shadow-sm'
-                                                        : 'bg-zinc-50 border-zinc-200 text-zinc-500 hover:border-zinc-400'
+                                                    (variant.id === 'kitchen-counter' && selectedFurniture.templateId === 'kitchen-base')
+                                                    ? 'bg-black border-black text-white shadow-sm'
+                                                    : 'bg-zinc-50 border-zinc-200 text-zinc-500 hover:border-zinc-400'
                                                     }`}
                                             >
                                                 {variant.label}
@@ -582,9 +614,9 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                                                     }
                                                 }}
                                                 className={`px-2 py-1.5 text-[10px] font-bold rounded border transition-all ${selectedFurniture.templateId === variant.id ||
-                                                        (variant.id === 'kitchen-upper' && selectedFurniture.templateId === 'kitchen-wall')
-                                                        ? 'bg-black border-black text-white shadow-sm'
-                                                        : 'bg-zinc-50 border-zinc-200 text-zinc-500 hover:border-zinc-400'
+                                                    (variant.id === 'kitchen-upper' && selectedFurniture.templateId === 'kitchen-wall')
+                                                    ? 'bg-black border-black text-white shadow-sm'
+                                                    : 'bg-zinc-50 border-zinc-200 text-zinc-500 hover:border-zinc-400'
                                                     }`}
                                             >
                                                 {variant.label}

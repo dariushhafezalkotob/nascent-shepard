@@ -56,6 +56,7 @@ export interface WallObject {
     offset: number; // Distance from floor
     hinge?: 'left' | 'right'; // For doors
     openDirection?: 'in' | 'out'; // For doors
+    doorType?: 'room' | 'balcony' | 'entrance'; // Added
 }
 
 export interface Choice {

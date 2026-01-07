@@ -386,35 +386,68 @@ export const useCanvas = () => {
                     ctx.lineTo(width / 2, thickness / 2);
                     ctx.stroke();
 
-                    // Swing
-                    const isRight = obj.hinge === 'right';
-                    const isOut = obj.openDirection === 'out';
-                    const swingDir = isOut ? -1 : 1;
-                    const hingeX = isRight ? width / 2 : -width / 2;
-                    const hingeY = -thickness / 2 * swingDir;
+                    // Specific Door Types
+                    if (obj.doorType === 'balcony') {
+                        // Sliding Door Rendering (Two overlapping glass panes)
+                        const panelW = width / 2 + 5; // Slight overlap
+                        ctx.fillStyle = '#e0f2fe';
+                        ctx.strokeStyle = '#000000';
 
-                    ctx.beginPath();
+                        // Fixed Panel (Back)
+                        ctx.fillRect(-width / 2, -thickness / 2, panelW, thickness / 2);
+                        ctx.strokeRect(-width / 2, -thickness / 2, panelW, thickness / 2);
 
-                    const startAngle = isRight ? Math.PI : 0;
-                    const endAngle = isRight
-                        ? Math.PI - (Math.PI / 2 * swingDir)
-                        : (Math.PI / 2 * swingDir);
+                        // Sliding Panel (Front - partial open)
+                        ctx.fillRect(width / 2 - panelW, 0, panelW, thickness / 2);
+                        ctx.strokeRect(width / 2 - panelW, 0, panelW, thickness / 2);
 
-                    const counterClockwise = (obj.hinge === 'left' && isOut) || (isRight && !isOut);
+                        // Slider handle indicator
+                        ctx.beginPath();
+                        ctx.moveTo(width / 2 - panelW + 10, thickness / 4);
+                        ctx.lineTo(width / 2 - panelW + 20, thickness / 4);
+                        ctx.stroke();
+                    } else {
+                        // Swing Door Rendering (Entrance Double or Room Single)
+                        const isEntrance = obj.doorType === 'entrance';
+                        const isOut = obj.openDirection === 'out';
+                        const swingDir = isOut ? -1 : 1;
 
-                    ctx.arc(hingeX, hingeY, width, startAngle, endAngle, counterClockwise);
+                        const drawLeaf = (hX: number, hY: number, leafW: number, startA: number, endA: number, ccw: boolean) => {
+                            // Swing Arc
+                            ctx.beginPath();
+                            ctx.arc(hX, hY, leafW, startA, endA, ccw);
+                            ctx.strokeStyle = '#ef4444';
+                            ctx.setLineDash([4, 4]);
+                            ctx.stroke();
+                            ctx.setLineDash([]);
 
-                    ctx.strokeStyle = '#ef4444';
-                    ctx.setLineDash([4, 4]);
-                    ctx.stroke();
-                    ctx.setLineDash([]);
+                            // Leaf Line
+                            ctx.beginPath();
+                            ctx.moveTo(hX, hY);
+                            ctx.lineTo(hX, hY + (isOut ? -leafW : leafW));
+                            ctx.strokeStyle = '#000000';
+                            ctx.stroke();
+                        };
 
-                    // Leaf
-                    ctx.beginPath();
-                    ctx.moveTo(hingeX, -thickness / 2 * swingDir);
-                    ctx.lineTo(hingeX, -thickness / 2 * swingDir + (obj.openDirection === 'out' ? -width : width));
-                    ctx.strokeStyle = '#000000';
-                    ctx.stroke();
+                        if (isEntrance) {
+                            // Double door: Two halves opening from middle
+                            const halfW = width / 2;
+                            // Left Leaf
+                            drawLeaf(-width / 2, -thickness / 2 * swingDir, halfW, 0, (Math.PI / 2 * swingDir), (isOut));
+                            // Right Leaf
+                            drawLeaf(width / 2, -thickness / 2 * swingDir, halfW, Math.PI, Math.PI - (Math.PI / 2 * swingDir), (!isOut));
+                        } else {
+                            // Standard Single Door
+                            const isRight = obj.hinge === 'right';
+                            const hingeX = isRight ? width / 2 : -width / 2;
+                            const hingeY = -thickness / 2 * swingDir;
+                            const startAngle = isRight ? Math.PI : 0;
+                            const endAngle = isRight ? Math.PI - (Math.PI / 2 * swingDir) : (Math.PI / 2 * swingDir);
+                            const cc = (obj.hinge === 'left' && isOut) || (isRight && !isOut);
+
+                            drawLeaf(hingeX, hingeY, width, startAngle, endAngle, cc);
+                        }
+                    }
                 } else if (obj.type === 'opening') {
                     // Openings just clear the wall area, no additional graphics
                     // The clearRect above (line 287) already does the heavy lifting.

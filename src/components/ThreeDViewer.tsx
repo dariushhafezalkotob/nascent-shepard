@@ -885,51 +885,104 @@ const RoofModel: React.FC<{ walls: Wall[]; height: number }> = ({ walls, height 
 // Initialize RectAreaLightUniformsLib
 RectAreaLightUniformsLib.init();
 
-const DoorModel: React.FC<{ width: number; height: number; thickness: number; hinge: 'left' | 'right'; openDirection: 'in' | 'out' }> = ({ width, height, thickness, hinge, openDirection }) => {
+const DoorModel: React.FC<{
+    width: number;
+    height: number;
+    thickness: number;
+    hinge: 'left' | 'right';
+    openDirection: 'in' | 'out';
+    doorType?: 'room' | 'balcony' | 'entrance'
+}> = ({ width, height, thickness, hinge, openDirection, doorType = 'room' }) => {
     const doorThickness = 0.04;
     const openAngle = (Math.PI / 2); // 90 degrees (Full Open)
 
-    // Hinge logic
-    const isRight = hinge === 'right';
+    const isEntrance = doorType === 'entrance';
+    const isBalcony = doorType === 'balcony';
     const isOut = openDirection === 'out';
-    const hingeSide = isRight ? 1 : -1;
     const swingDir = isOut ? -1 : 1;
 
-    // The door leaf rotates around the hinge point at the edge
-    const hingeX = (width / 2) * hingeSide;
+    // Material logic
+    const frameColor = isBalcony ? "#333333" : "#4e342e";
+    const leafColor = isBalcony ? "#a5f3fc" : "#8d6e63"; // Cyan for glass
+    const leafOpacity = isBalcony ? 0.6 : 1;
+    const leafTransparent = isBalcony;
 
     return (
         <group>
-            {/* Door Frame (3 pieces: Left, Right, Top) */}
+            {/* Door Frame */}
             <group>
-                {/* Left Frame Piece - Shifted 5mm into the wall for overlap */}
                 <mesh position={[-width / 2 - 0.02, height / 2, 0]}>
                     <boxGeometry args={[0.06, height + 0.05, thickness + 0.02]} />
-                    <meshStandardMaterial color="#4e342e" />
+                    <meshStandardMaterial color={frameColor} />
                 </mesh>
-                {/* Right Frame Piece - Shifted 5mm into the wall for overlap */}
                 <mesh position={[width / 2 + 0.02, height / 2, 0]}>
                     <boxGeometry args={[0.06, height + 0.05, thickness + 0.02]} />
-                    <meshStandardMaterial color="#4e342e" />
+                    <meshStandardMaterial color={frameColor} />
                 </mesh>
-                {/* Top Frame Piece */}
                 <mesh position={[0, height + 0.025, 0]}>
                     <boxGeometry args={[width + 0.1, 0.05, thickness + 0.02]} />
-                    <meshStandardMaterial color="#4e342e" />
+                    <meshStandardMaterial color={frameColor} />
                 </mesh>
             </group>
-            {/* Door Leaf (Rotated) */}
-            <group position={[hingeX, 0, 0]} rotation={[0, openAngle * hingeSide * swingDir, 0]}>
-                <mesh position={[-hingeX, height / 2, 0]}>
-                    <boxGeometry args={[width, height, doorThickness]} />
-                    <meshStandardMaterial color="#8d6e63" />
-                </mesh>
-                {/* Handle */}
-                <mesh position={[-hingeX * 1.8, height / 2, 0.05 * swingDir]}>
-                    <sphereGeometry args={[0.025, 16, 16]} />
-                    <meshStandardMaterial color="#ffd700" metalness={0.8} roughness={0.2} />
-                </mesh>
-            </group>
+
+            {isBalcony ? (
+                // Sliding Door Model
+                <group>
+                    {/* Fixed Panel (Back) */}
+                    <mesh position={[-width / 4, height / 2, -thickness / 4]}>
+                        <boxGeometry args={[width / 2, height, doorThickness]} />
+                        <meshStandardMaterial color={leafColor} transparent={leafTransparent} opacity={leafOpacity} />
+                    </mesh>
+                    {/* Sliding Panel (Front - Half Open) */}
+                    <mesh position={[width / 8, height / 2, thickness / 4]}>
+                        <boxGeometry args={[width / 2, height, doorThickness]} />
+                        <meshStandardMaterial color={leafColor} transparent={leafTransparent} opacity={leafOpacity} />
+                    </mesh>
+                    {/* Sliding handle */}
+                    <mesh position={[-width / 8, height / 2, thickness / 4 + 0.03]}>
+                        <boxGeometry args={[0.02, 0.15, 0.02]} />
+                        <meshStandardMaterial color="#444" metalness={0.8} />
+                    </mesh>
+                </group>
+            ) : isEntrance ? (
+                // Double Door Swing
+                <>
+                    {/* Left Leaf */}
+                    <group position={[-width / 2, 0, 0]} rotation={[0, -openAngle * swingDir, 0]}>
+                        <mesh position={[width / 4, height / 2, 0]}>
+                            <boxGeometry args={[width / 2, height, doorThickness]} />
+                            <meshStandardMaterial color={leafColor} />
+                        </mesh>
+                        <mesh position={[width * 0.45, height / 2, 0.05 * swingDir]}>
+                            <sphereGeometry args={[0.025, 16, 16]} />
+                            <meshStandardMaterial color="#ffd700" metalness={0.8} roughness={0.2} />
+                        </mesh>
+                    </group>
+                    {/* Right Leaf */}
+                    <group position={[width / 2, 0, 0]} rotation={[0, openAngle * swingDir, 0]}>
+                        <mesh position={[-width / 4, height / 2, 0]}>
+                            <boxGeometry args={[width / 2, height, doorThickness]} />
+                            <meshStandardMaterial color={leafColor} />
+                        </mesh>
+                        <mesh position={[-width * 0.45, height / 2, 0.05 * swingDir]}>
+                            <sphereGeometry args={[0.025, 16, 16]} />
+                            <meshStandardMaterial color="#ffd700" metalness={0.8} roughness={0.2} />
+                        </mesh>
+                    </group>
+                </>
+            ) : (
+                // Standard Single Door Leaf
+                <group position={[(width / 2) * (hinge === 'right' ? 1 : -1), 0, 0]} rotation={[0, openAngle * (hinge === 'right' ? 1 : -1) * swingDir, 0]}>
+                    <mesh position={[-(width / 2) * (hinge === 'right' ? 1 : -1), height / 2, 0]}>
+                        <boxGeometry args={[width, height, doorThickness]} />
+                        <meshStandardMaterial color={leafColor} />
+                    </mesh>
+                    <mesh position={[-(width / 2) * (hinge === 'right' ? 1 : -1) * 1.8, height / 2, 0.05 * swingDir]}>
+                        <sphereGeometry args={[0.025, 16, 16]} />
+                        <meshStandardMaterial color="#ffd700" metalness={0.8} roughness={0.2} />
+                    </mesh>
+                </group>
+            )}
         </group>
     );
 };
@@ -1042,6 +1095,7 @@ const WallObjectMesh: React.FC<{ obj: WallObject; wall: Wall; areaIntensity: num
                     thickness={wall.thickness}
                     hinge={obj.hinge || 'left'}
                     openDirection={obj.openDirection || 'in'}
+                    doorType={obj.doorType}
                 />
             ) : (
                 <WindowModel
