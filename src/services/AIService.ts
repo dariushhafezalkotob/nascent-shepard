@@ -252,6 +252,22 @@ CRITICAL RULES:
    - 'Private' focus on restful, personal aesthetics (bedrooms/baths).
    - 'Outdoor' should adopt the canopy and greenery aesthetic.
 5. VISUALIZATION PROMPT: Construct a detailed prompt for generating a photorealistic image of this room. MUST include specific furniture items you are placing and the style from the matching category references.
+6. FURNITURE DIMENSIONS (METRIC): You MUST use these exact dimensions for your "width" and "depth" values:
+   - Sofa (3-seater): 2.1m x 0.95m
+   - Sofa (2-seater): 1.6m x 0.9m
+   - Armchair: 0.9m x 0.9m
+   - Coffee Table: 1.2m x 0.75m
+   - Dining Table (6-seater): 1.8m x 0.9m
+   - Dining Table (4-seater): 1.4m x 0.8m
+   - Dining Chair: 0.5m x 0.5m
+   - Bed (King): 2.0m x 2.1m
+   - Bed (Queen): 1.6m x 2.1m
+   - Bed (Single): 1.0m x 2.0m
+   - Desk: 1.4m x 0.7m
+   - Office Chair: 0.65m x 0.65m
+   - Wardrobe: Depth 0.6m (Width varies 1.0m to 2.5m)
+   - Side Table: 0.5m x 0.5m
+   - TV Stand: 1.6m x 0.45m
 
 OUTPUT FORMAT:
 Return ONLY a structured JSON object.
@@ -264,14 +280,13 @@ Return ONLY a structured JSON object.
       "visualization_prompt": "Photorealistic interior render prompt including the furniture and reference image styles.",
       "items": [
          { 
-           "templateId": "king_bed", 
+           "templateId": "sofa | chair | table | bed | desk | storage", 
+           "label": "Brief description (e.g., '3-Seater Velvet Sofa')", 
            "x_rel": 0.5, 
-           "y_rel": 0.2, 
+           "y_rel": 0.5, 
            "rotation": 0, 
-           "label": "King Bed", 
-           "category": "bedroom", 
-           "width": 2, 
-           "depth": 2,
+           "width": 2.1, 
+           "depth": 0.95,
            "style_citation": "Inspired by the light wood aesthetic in Reference Image X"
          }
       ]

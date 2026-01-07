@@ -11,18 +11,18 @@ export interface FurnitureTemplate {
 export const FURNITURE_TEMPLATES: FurnitureTemplate[] = [
     // Living Room
     { id: 'sofa-2', label: '2-Seater Sofa', category: 'living', width: 1.6, depth: 0.9, budgetWeight: 3.0 },
-    { id: 'sofa-3', label: '3-Seater Sofa', category: 'living', width: 2.2, depth: 0.9, budgetWeight: 4.0 },
-    { id: 'armchair', label: 'Armchair', category: 'living', width: 0.9, depth: 0.8, budgetWeight: 2.0 },
-    { id: 'dining-table', label: 'Dining Table', category: 'living', width: 1.8, depth: 0.9, budgetWeight: 3.5 },
-    { id: 'tv-stand', label: 'TV Stand', category: 'living', width: 1.5, depth: 0.4, budgetWeight: 1.5 },
-    { id: 'coffee-table', label: 'Coffee Table', category: 'living', width: 1.0, depth: 0.6, budgetWeight: 1.2 },
+    { id: 'sofa-3', label: '3-Seater Sofa', category: 'living', width: 2.1, depth: 0.95, budgetWeight: 4.0 },
+    { id: 'armchair', label: 'Armchair', category: 'living', width: 0.9, depth: 0.9, budgetWeight: 2.0 },
+    { id: 'dining-table', label: 'Dining Table', category: 'living', width: 1.4, depth: 0.8, budgetWeight: 3.5 },
+    { id: 'tv-stand', label: 'TV Stand', category: 'living', width: 1.6, depth: 0.45, budgetWeight: 1.5 },
+    { id: 'coffee-table', label: 'Coffee Table', category: 'living', width: 1.2, depth: 0.75, budgetWeight: 1.2 },
 
     // Bedroom
     { id: 'bed-single', label: 'Single Bed', category: 'bedroom', width: 1.0, depth: 2.0, budgetWeight: 3.0 },
-    { id: 'bed-double', label: 'Double Bed', category: 'bedroom', width: 1.6, depth: 2.0, budgetWeight: 4.5 },
-    { id: 'bed-king', label: 'King Bed', category: 'bedroom', width: 2.0, depth: 2.0, budgetWeight: 6.0 },
-    { id: 'nightstand', label: 'Nightstand', category: 'bedroom', width: 0.5, depth: 0.4, budgetWeight: 0.8 },
-    { id: 'wardrobe', label: 'Wardrobe', category: 'bedroom', width: 1.2, depth: 0.6, budgetWeight: 3.0 },
+    { id: 'bed-double', label: 'Queen Bed', category: 'bedroom', width: 1.6, depth: 2.1, budgetWeight: 4.5 },
+    { id: 'bed-king', label: 'King Bed', category: 'bedroom', width: 2.0, depth: 2.1, budgetWeight: 6.0 },
+    { id: 'nightstand', label: 'Nightstand', category: 'bedroom', width: 0.5, depth: 0.5, budgetWeight: 0.8 },
+    { id: 'wardrobe', label: 'Wardrobe', category: 'bedroom', width: 1.5, depth: 0.6, budgetWeight: 3.0 },
 
     // Kitchen
     { id: 'fridge', label: 'Fridge', category: 'kitchen', width: 0.7, depth: 0.7, budgetWeight: 5.0 },

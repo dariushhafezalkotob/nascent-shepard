@@ -290,71 +290,116 @@ export const Layout: React.FC = () => {
         const newFurniture: any[] = [];
         const currentRooms = detectRooms(state.walls);
 
-        concepts.forEach(concept => {
-            // Match room by label text (fuzzy match)
-            // 1. Find the target room by matching label text to concept zone_name
-            const label = state.labels.find(l => l.text.toLowerCase().includes(concept.zone_name.toLowerCase()) || concept.zone_name.toLowerCase().includes(l.text.toLowerCase()));
-
-            // 2. Find the polygon containing this label
-            const room = label ? currentRooms.find(r => Math.abs(r.centroid.x - label.x) < 0.1 && Math.abs(r.centroid.y - label.y) < 0.1) : null;
-
-            if (room) {
-                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-                room.path.forEach(p => {
-                    minX = Math.min(minX, p.x);
-                    maxX = Math.max(maxX, p.x);
-                    minY = Math.min(minY, p.y);
-                    maxY = Math.max(maxY, p.y);
-                });
-                const roomW = maxX - minX;
-                const roomH = maxY - minY;
-
-                (concept.items || []).forEach((item: any) => {
-                    const cleanId = item.templateId?.toString().split(' ')[0];
-                    const worldX = minX + (item.x_rel * roomW);
-                    const worldY = minY + (item.y_rel * roomH);
-
-                    newFurniture.push({
-                        id: Math.random().toString(36).substring(2, 9),
-                        templateId: cleanId || 'sofa',
-                        x: isFinite(worldX) ? worldX : 0,
-                        y: isFinite(worldY) ? worldY : 0,
-                        rotation: (item.rotation || 0),
-                        width: item.width || 1,
-                        depth: item.depth || 1,
-                        label: item.label || 'Furniture',
-                        category: item.category || 'living'
-                    });
-                });
+        // Helper: Point in Polygon check
+        const isPointInRoom = (p: Point, roomPath: Point[]) => {
+            let inside = false;
+            for (let i = 0, j = roomPath.length - 1; i < roomPath.length; j = i++) {
+                const xi = roomPath[i].x, yi = roomPath[i].y;
+                const xj = roomPath[j].x, yj = roomPath[j].y;
+                const intersect = ((yi > p.y) !== (yj > p.y)) && (p.x < (xj - xi) * (p.y - yi) / (yj - yi) + xi);
+                if (intersect) inside = !inside;
             }
-        });
+            return inside;
+        };
 
-        if (newFurniture.length > 0 || concepts.length > 0) {
-            // Also update labels with prompts AND category-specific reference images
-            const updatedLabels = state.labels.map(l => {
-                const concept = concepts.find(c =>
-                    l.text.toLowerCase().includes(c.zone_name.toLowerCase()) ||
-                    c.zone_name.toLowerCase().includes(l.text.toLowerCase())
-                );
+        // Helper: Normalize name for fuzzy matching (removes trailing A/B/C or 1/2/3)
+        const normalize = (s: string) => s.toLowerCase().trim().replace(/[-_\s]*(?:[a-z]|[0-9])$/i, '');
 
-                if (concept) {
-                    // Find the category for this room from roomMappings
-                    const category = roomMappings[l.text];
-                    const relevantImages = category ? (imagesByCategory[category] || []) : [];
+        // Use a Set to track which labels received properties to avoid duplicates
+        const updatedLabelMap = new Map<string, any>();
 
-                    return {
-                        ...l,
-                        visualizationPrompt: concept.visualization_prompt || l.visualizationPrompt,
-                        referenceImages: relevantImages
-                    };
-                }
-                return l;
+        // 1. Process each concept and apply to ALL matching rooms
+        concepts.forEach(concept => {
+            const conceptName = concept.zone_name.toLowerCase().trim();
+            const normalizedConcept = normalize(conceptName);
+
+            // Find all labels that match this concept
+            const matchingLabels = state.labels.filter(l => {
+                const labelText = l.text.toLowerCase().trim();
+                const normalizedLabel = normalize(labelText);
+
+                return labelText.includes(conceptName) ||
+                    conceptName.includes(labelText) ||
+                    normalizedLabel === normalizedConcept ||
+                    normalizedLabel.includes(normalizedConcept);
             });
 
+            console.log(`Concept "${concept.zone_name}" matched labels:`, matchingLabels.map(l => l.text));
+
+            matchingLabels.forEach(label => {
+                // Find physical room polygon containing this label point
+                const room = currentRooms.find(r => isPointInRoom({ x: label.x, y: label.y }, r.path));
+
+                if (room) {
+                    // Apply properties to the label
+                    const category = roomMappings[label.text];
+                    const relevantImages = category ? (imagesByCategory[category] || []) : [];
+
+                    updatedLabelMap.set(label.id, {
+                        ...label,
+                        visualizationPrompt: concept.visualization_prompt || label.visualizationPrompt,
+                        referenceImages: relevantImages
+                    });
+
+                    // Apply furniture items to the room geometry
+                    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                    room.path.forEach(p => {
+                        minX = Math.min(minX, p.x);
+                        maxX = Math.max(maxX, p.x);
+                        minY = Math.min(minY, p.y);
+                        maxY = Math.max(maxY, p.y);
+                    });
+                    const roomW = maxX - minX;
+                    const roomH = maxY - minY;
+
+                    (concept.items || []).forEach((item: any) => {
+                        // Standard Dimension Dataset for Correction
+                        const label = (item.label || "").toLowerCase();
+                        let width = item.width || 1;
+                        let depth = item.depth || 1;
+
+                        if (label.includes('sofa') && label.includes('3')) { width = 2.1; depth = 0.95; }
+                        else if (label.includes('sofa') && label.includes('2')) { width = 1.6; depth = 0.9; }
+                        else if (label.includes('sofa')) { width = 2.1; depth = 0.95; }
+                        else if (label.includes('armchair') || label.includes('accent chair')) { width = 0.9; depth = 0.9; }
+                        else if (label.includes('king') && label.includes('bed')) { width = 2.0; depth = 2.1; }
+                        else if (label.includes('queen') && label.includes('bed')) { width = 1.6; depth = 2.1; }
+                        else if (label.includes('bed')) { width = 1.6; depth = 2.1; }
+                        else if (label.includes('dining table') && label.includes('6')) { width = 1.8; depth = 0.9; }
+                        else if (label.includes('dining table')) { width = 1.4; depth = 0.8; }
+                        else if (label.includes('coffee table')) { width = 1.2; depth = 0.75; }
+                        else if (label.includes('desk')) { width = 1.4; depth = 0.7; }
+                        else if (label.includes('office chair')) { width = 0.65; depth = 0.65; }
+                        else if (label.includes('wardrobe')) { depth = 0.6; } // Keep AI width if feasible
+                        else if (label.includes('side table')) { width = 0.5; depth = 0.5; }
+                        else if (label.includes('dining chair')) { width = 0.5; depth = 0.5; }
+
+                        newFurniture.push({
+                            id: Math.random().toString(36).substring(2, 9),
+                            templateId: item.templateId?.toString().split(' ')[0] || 'sofa',
+                            x: minX + (item.x_rel * roomW),
+                            y: minY + (item.y_rel * roomH),
+                            rotation: (item.rotation || 0),
+                            width: width,
+                            depth: depth,
+                            label: item.label || 'Furniture',
+                            category: item.category || 'living'
+                        });
+                    });
+                } else {
+                    console.warn(`Label "${label.text}" is not inside any detected room polygon.`);
+                }
+            });
+        });
+
+        // 2. Finalize label updates (merging updated ones with unchanged ones)
+        const finalLabels = state.labels.map(l => updatedLabelMap.get(l.id) || l);
+
+        if (newFurniture.length > 0 || updatedLabelMap.size > 0) {
             setHistory(prev => ({
                 ...prev,
                 furniture: [...prev.furniture, ...newFurniture],
-                labels: updatedLabels
+                labels: finalLabels
             }), true);
         }
     };
