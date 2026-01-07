@@ -393,13 +393,31 @@ export const Layout: React.FC = () => {
         });
 
         // 2. Finalize label updates (merging updated ones with unchanged ones)
-        const finalLabels = state.labels.map(l => updatedLabelMap.get(l.id) || l);
+        const finalLabels = state.labels.map(l => {
+            const update = updatedLabelMap.get(l.id);
+            if (update) {
+                // Remove the bulky referenceImages array from the label itself
+                // We will resolve it from common styleLibrary in AI mode
+                const { referenceImages, ...cleanUpdate } = update;
+                return cleanUpdate;
+            }
+            return l;
+        });
 
         if (newFurniture.length > 0 || updatedLabelMap.size > 0) {
+            // Build ID-based mapping for persistence
+            const idBasedMappings: Record<string, string> = {};
+            state.labels.forEach(l => {
+                const category = roomMappings[l.text];
+                if (category) idBasedMappings[l.id] = category;
+            });
+
             setHistory(prev => ({
                 ...prev,
                 furniture: [...prev.furniture, ...newFurniture],
-                labels: finalLabels
+                labels: finalLabels,
+                styleLibrary: imagesByCategory, // Centralized storage to save space
+                roomMappings: idBasedMappings
             }), true);
         }
     };
@@ -521,7 +539,15 @@ export const Layout: React.FC = () => {
                         />
                     )}
 
-                    {activeTab === 'rendering' && <AIRenderingOverlay apiKey={apiKey} onBack={() => setActiveTab('3d')} activeRoom={activeRoomLabel} />}
+                    {activeTab === 'rendering' && (
+                        <AIRenderingOverlay
+                            apiKey={apiKey}
+                            onBack={() => setActiveTab('3d')}
+                            activeRoom={activeRoomLabel}
+                            styleLibrary={state.styleLibrary}
+                            roomMappings={state.roomMappings}
+                        />
+                    )}
 
                     {referenceImage && activeTab === 'layout' && (
                         <div className="absolute top-4 left-4 z-10 bg-white p-2 rounded shadow-lg border border-zinc-200 w-[30vw] max-w-[400px] min-w-[200px] max-h-[85vh] flex flex-col overflow-hidden">
@@ -679,6 +705,8 @@ export const Layout: React.FC = () => {
                     globalWallHeight={state.globalWallHeight ?? 2.8}
                     updateGlobalWallHeight={updateGlobalWallHeight}
                     apiKey={apiKey}
+                    styleLibrary={state.styleLibrary}
+                    roomMappings={state.roomMappings}
                 />
             )}
 

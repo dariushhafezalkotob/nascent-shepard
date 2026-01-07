@@ -64,11 +64,42 @@ export const AIDressingModal: React.FC<AIDressingModalProps> = ({ isOpen, onClos
         files.forEach(file => {
             const reader = new FileReader();
             reader.onload = (event) => {
-                const base64 = event.target?.result as string;
-                setStyleImagesByCategory(prev => ({
-                    ...prev,
-                    [category]: [...prev[category], base64]
-                }));
+                const img = new Image();
+                img.onload = () => {
+                    // Create a canvas to compress the image
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+
+                    // Standardize max dimensions (e.g., 1200px)
+                    const maxDim = 1200;
+                    if (width > maxDim || height > maxDim) {
+                        if (width > height) {
+                            height *= maxDim / width;
+                            width = maxDim;
+                        } else {
+                            width *= maxDim / height;
+                            height = maxDim;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) return;
+
+                    // Use better interpolation if needed, but standard is fine
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    // Compress as JPEG (0.8 quality is great balance)
+                    const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8);
+
+                    setStyleImagesByCategory(prev => ({
+                        ...prev,
+                        [category]: [...prev[category], compressedBase64]
+                    }));
+                };
+                img.src = event.target?.result as string;
             };
             reader.readAsDataURL(file);
         });

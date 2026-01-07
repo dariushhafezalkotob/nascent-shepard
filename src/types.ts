@@ -88,7 +88,7 @@ export interface RoomLabel {
     x: number;
     y: number;
     visualizationPrompt?: string;
-    referenceImages?: string[];
+    referenceImages?: string[]; // Kept for legacy compatibility, but we should use styleLibrary
 }
 
 export interface EditorState {
@@ -100,8 +100,8 @@ export interface EditorState {
     mode: 'select' | 'wall' | 'divider' | 'door' | 'window' | 'opening';
     pan: Point;
     zoom: number;
-    globalWallHeight?: number; // Global height in meters (2.5 - 3.3)
-    floorMaterials?: Record<string, string>; // roomLabelId -> materialId
+    globalWallHeight?: number;
+    floorMaterials?: Record<string, string>;
     decorationStyle?: string;
     decorationBudget?: number;
     itemBudgetMap?: Record<string, number>;
@@ -110,4 +110,6 @@ export interface EditorState {
     backgroundOffset?: Point;
     backgroundScale?: number;
     backgroundLocked?: boolean;
+    styleLibrary?: Record<string, string[]>; // Category -> Base64[]
+    roomMappings?: Record<string, string>; // Label ID -> Category
 }

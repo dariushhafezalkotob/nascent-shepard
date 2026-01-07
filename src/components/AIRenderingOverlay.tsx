@@ -7,9 +7,17 @@ interface AIRenderingOverlayProps {
     apiKey: string;
     onBack: () => void;
     activeRoom?: RoomLabel | null;
+    styleLibrary?: Record<string, string[]>;
+    roomMappings?: Record<string, string>;
 }
 
-export const AIRenderingOverlay: React.FC<AIRenderingOverlayProps> = ({ apiKey, onBack, activeRoom }) => {
+export const AIRenderingOverlay: React.FC<AIRenderingOverlayProps> = ({
+    apiKey,
+    onBack,
+    activeRoom,
+    styleLibrary = {},
+    roomMappings = {}
+}) => {
     const [isGenerating, setIsGenerating] = useState(false);
     const [renderedImage, setRenderedImage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -31,39 +39,33 @@ export const AIRenderingOverlay: React.FC<AIRenderingOverlayProps> = ({ apiKey, 
         setError(null);
 
         try {
-            // 1. Calculate Crop Area from Viewfinder
+            // ... (screenshot logic remains same)
             const canvasRect = canvas.getBoundingClientRect();
             const vfRect = viewfinder.getBoundingClientRect();
-
-            // Map screen coordinates to internal canvas pixels
             const scaleX = canvas.width / canvasRect.width;
             const scaleY = canvas.height / canvasRect.height;
-
             const cropX = (vfRect.left - canvasRect.left) * scaleX;
             const cropY = (vfRect.top - canvasRect.top) * scaleY;
             const cropW = vfRect.width * scaleX;
             const cropH = vfRect.height * scaleY;
 
-            // 2. Perform the Crop
             const tempCanvas = document.createElement('canvas');
             const tCtx = tempCanvas.getContext('2d');
             if (!tCtx) throw new Error("Context failed");
-
             tempCanvas.width = cropW;
             tempCanvas.height = cropH;
 
-            tCtx.drawImage(
-                canvas,
-                cropX, cropY, cropW, cropH, // Source (Cropped area)
-                0, 0, cropW, cropH        // Destination
-            );
-
+            tCtx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
             const screenshot = tempCanvas.toDataURL('image/png');
             setOriginalScreenshot(screenshot);
 
-            // 3. Identify Context
+            // 3. Identify Context using Library fallback
             const activePrompt = activeRoom?.visualizationPrompt || "A photorealistic render of an architect-designed interior.";
-            const activeRefs = activeRoom?.referenceImages || [];
+
+            const category = activeRoom ? roomMappings[activeRoom.id] : null;
+            const activeRefs = activeRoom?.referenceImages?.length
+                ? activeRoom.referenceImages
+                : (category ? (styleLibrary[category] || []) : []);
 
             // 4. Send to AI
             const result = await AIService.renderPhotorealistic(screenshot, apiKey, activePrompt, activeRefs);
@@ -178,23 +180,30 @@ export const AIRenderingOverlay: React.FC<AIRenderingOverlayProps> = ({ apiKey, 
                             </p>
                         </div>
 
-                        {activeRoom?.referenceImages && activeRoom.referenceImages.length > 0 && (
-                            <div className="space-y-1">
-                                <span className="text-[9px] text-zinc-500 uppercase font-bold">Style Context ({activeRoom.referenceImages.length} images)</span>
-                                <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-hide">
-                                    {activeRoom.referenceImages.slice(0, 5).map((img, i) => (
-                                        <div key={i} className="w-8 h-8 rounded border border-white/10 overflow-hidden flex-shrink-0">
-                                            <img src={img} className="w-full h-full object-cover opacity-60" alt="" />
-                                        </div>
-                                    ))}
-                                    {activeRoom.referenceImages.length > 5 && (
-                                        <div className="w-8 h-8 rounded bg-white/5 flex items-center justify-center text-[10px] text-zinc-500 font-bold">
-                                            +{activeRoom.referenceImages.length - 5}
-                                        </div>
-                                    )}
+                        {(() => {
+                            const category = activeRoom ? roomMappings[activeRoom.id] : null;
+                            const images = activeRoom?.referenceImages?.length ? activeRoom.referenceImages : (category ? (styleLibrary[category] || []) : []);
+
+                            if (images.length === 0) return null;
+
+                            return (
+                                <div className="space-y-1">
+                                    <span className="text-[9px] text-zinc-500 uppercase font-bold">Style Context ({images.length} images - {category})</span>
+                                    <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-hide">
+                                        {images.slice(0, 5).map((img, i) => (
+                                            <div key={i} className="w-8 h-8 rounded border border-white/10 overflow-hidden flex-shrink-0">
+                                                <img src={img} className="w-full h-full object-cover opacity-60" alt="" />
+                                            </div>
+                                        ))}
+                                        {images.length > 5 && (
+                                            <div className="w-8 h-8 rounded bg-white/5 flex items-center justify-center text-[10px] text-zinc-500 font-bold">
+                                                +{images.length - 5}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })()}
 
                         <p className="text-[9px] text-zinc-500 pt-2 border-t border-white/5 italic">
                             Gemini 3 will combine this viewport + prompt + references to generate the final render.

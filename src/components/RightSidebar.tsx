@@ -18,6 +18,8 @@ interface RightSidebarProps {
     globalWallHeight: number;
     updateGlobalWallHeight: (height: number) => void;
     apiKey: string;
+    styleLibrary?: Record<string, string[]>;
+    roomMappings?: Record<string, string>;
 }
 
 export const RightSidebar: React.FC<RightSidebarProps> = ({
@@ -34,8 +36,11 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     onDelete,
     globalWallHeight,
     updateGlobalWallHeight,
-    apiKey
+    apiKey,
+    styleLibrary = {},
+    roomMappings = {}
 }) => {
+    // ... rest of the component
     const selectedWall = walls.find((w) => w.id === selectedId);
     const selectedObject = objects.find((o) => o.id === selectedId);
     const selectedFurniture = furniture.find((f) => f.id === selectedId);
@@ -554,21 +559,28 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                                 </p>
                             </div>
 
-                            {selectedLabel.referenceImages && selectedLabel.referenceImages.length > 0 && (
-                                <div className="space-y-1.5 pt-4 border-t border-zinc-200">
-                                    <label className="text-[10px] font-semibold text-zinc-500 uppercase flex items-center gap-1.5">
-                                        <Sparkles size={12} /> Style References
-                                    </label>
-                                    <div className="grid grid-cols-4 gap-2">
-                                        {selectedLabel.referenceImages.map((img, idx) => (
-                                            <div key={idx} className="aspect-square rounded border border-zinc-200 overflow-hidden shadow-sm bg-zinc-100">
-                                                <img src={img} alt={`Ref ${idx}`} className="w-full h-full object-cover" />
-                                            </div>
-                                        ))}
+                            {(() => {
+                                const category = roomMappings[selectedLabel.id];
+                                const images = selectedLabel.referenceImages?.length ? selectedLabel.referenceImages : (category ? (styleLibrary[category] || []) : []);
+
+                                if (images.length === 0) return null;
+
+                                return (
+                                    <div className="space-y-1.5 pt-4 border-t border-zinc-200">
+                                        <label className="text-[10px] font-semibold text-zinc-500 uppercase flex items-center gap-1.5">
+                                            <Sparkles size={12} /> Style References
+                                        </label>
+                                        <div className="grid grid-cols-4 gap-2">
+                                            {images.map((img, idx) => (
+                                                <div key={idx} className="aspect-square rounded border border-zinc-200 overflow-hidden shadow-sm bg-zinc-100">
+                                                    <img src={img} alt={`Ref ${idx}`} className="w-full h-full object-cover" />
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <p className="text-[9px] text-zinc-400 italic">Images from the "{category || 'assigned'}" category used for this room.</p>
                                     </div>
-                                    <p className="text-[9px] text-zinc-400 italic">Images used to guide the decoration logic.</p>
-                                </div>
-                            )}
+                                );
+                            })()}
                         </div>
 
                         <div className="pt-8 border-t border-zinc-200">
